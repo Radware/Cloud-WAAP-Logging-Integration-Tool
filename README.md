@@ -79,8 +79,3 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 - Check CloudWatch Logs for errors.
 - Verify all configurations and permissions, especially for SAS tokens and AWS access keys.
-
-## Conclusion
-
-This Lambda function automates the transformation and transfer of Cloud WAF logs from AWS S3 to various formats and destinations, enhancing integration capabilities with different cloud environments and SIEMs.
-

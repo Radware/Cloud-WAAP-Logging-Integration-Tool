@@ -1,25 +1,46 @@
-# Cloud WAF Logging Integration Tool
-Radware Cloud WAF Log Integration Tool: Extends Cloud WAF's AWS S3 log exporting capabilities by enabling reformatting and distribution to various formats and cloud providers. Enhances integration with diverse services and SIEMs through AWS Lambda-powered transformation and management.
+# Cloud WAAP Logging Integration Tool
 
-## Version Updates
+## Overview
+The Cloud WAAP Logging Integration Tool is specifically designed to work with Radware's Cloud WAAP. Its primary function is to facilitate the handling of logs once they are transferred to an AWS S3 bucket. This tool is pivotal in transforming and efficiently managing these logs, enhancing their compatibility for integration with various services and SIEMs.
 
-- **Version 1.0 (Initial Release)**:
-  - Initial release of the tool.
+This guide provides detailed instructions on utilizing an AWS Lambda function for effective log format transformation and management.
 
-## Features
-
-- **Log Reformatting**: Converts AWS S3 logs from `.json.gz` to `ndjson`, `json`, or `json.gz` (for Azure).
-- **Decompression**: Decompress `.json.gz` files to extract JSON content.
-- **AWS S3 and Azure Blob Transfer**: Uploads files to Azure Blob Storage or specified S3 bucket.
-- **Flexible Destination Control**: Choose between internal or external S3 buckets, or Azure Blob Storage.
-- **Suffix Handling**: Add or remove suffixes in the folder name for saved files.
-- **Optional File Deletion**: Delete original files post-processing.
+Additionally, the tool's key capabilities include decompressing .json.gz files for easier access, transforming logs into JSON or NDJSON formats to suit different analytical needs, and offering the flexibility to transfer logs to either internal/external AWS S3 buckets or Azure Blob Storage.
 
 ## Prerequisites
+- **AWS Knowledge:** A basic understanding of the AWS cloud platform.
+- **AWS Account:** An AWS account with access to S3 and Lambda services.
+- **Radware Cloud WAAP:** Radware's Cloud WAAP configured to send logs to an AWS S3 bucket.
+- **For Azure Blob Storage Transfer:**
+  - **Azure Knowledge:** A basic understanding of the Azure cloud platform.
+  - **Azure Storage Account:** An Azure Storage Account and a corresponding SAS Token.
 
-1. AWS Lambda execution role with necessary permissions.
-2. Azure Blob Storage account and container (for Azure Blob Storage transfer).
-3. SAS token for Azure Blob Storage account (for Azure Blob Storage transfer).
+## Current Version
+Version 1.0 (Initial Release)
+
+## Features
+- **Decompression:** Decompress JSON.GZ files to extract JSON content.
+- **Log Reformatting:** Converts AWS S3 logs from JSON.GZ format to NDJSON or JSON.
+- **Transfer to Custom AWS S3 or Azure Blob:** Uploads files to Azure Blob Storage or specified S3 bucket.
+- **Folder Suffix Customization:** Add or remove suffixes in the folder name for saved files.
+- **Optional File Deletion:** Delete original files post-processing.
+
+## Operational Sequence
+The tool operates in the following sequence:
+
+### 1. Initiation
+- The process commences when Radware's Cloud WAAP sends logs to a designated AWS S3 bucket.
+
+### 2. Event Trigger
+- The deposition of a new log file in the S3 bucket automatically triggers an event.
+
+### 3. Lambda Function Execution
+- The Lambda function performs the following actions:
+  - Downloads the new file from the S3 bucket.
+  - Adjusts the file's format based on predefined settings.
+  - Sends the reformatted file to the chosen destination.
+  - Optionally, removes the original file from the S3 bucket.
+
 
 ## Configuration
 
@@ -69,6 +90,12 @@ For Azure Destination:
 
 When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will process it according to the configurations set, transforming and transferring the file to the specified destination.
 
+
+## Changelog
+
+### Version 1.0 - 23/11/2023
+- Initial release of the tool.
+
 ## Lambda IAM Permissions
 
 - Permissions for S3 bucket access (`GetObject`, `PutObject`, `DeleteObject`).
@@ -77,5 +104,29 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Troubleshooting
 
-- Check CloudWatch Logs for errors.
-- Verify all configurations and permissions, especially for SAS tokens and AWS access keys.
+### Common Issues and Solutions
+
+1. **Logs Not Being Sent to Initial S3 Bucket**
+   - **Potential Cause:** Incorrect configuration in Radware's Cloud WAAP.
+   - **Solution:** Verify S3 integration settings in Cloud WAAP. Ensure correct configuration of the S3 bucket name, access key, and secret key. Check under Application Configurations / Advanced tab in the Cloud WAAP console and use the Test Configuration feature.
+
+2. **Lambda Function Not Triggering**
+   - **Potential Cause:** Misconfiguration of the S3 event trigger.
+   - **Solution:** Check the event trigger settings in the Lambda function. Ensure correct setup of bucket name, event type, prefix, and suffix.
+
+3. **Incorrect File Format Conversion**
+   - **Potential Cause:** Misconfigured script variables in the Lambda function.
+   - **Solution:** Verify and adjust script configuration variables within the Lambda function for correct file format conversion.
+
+4. **Processed Files Not Appearing in Destination Bucket**
+   - **Potential Cause:** Incorrect destination bucket settings or permission issues.
+   - **Solution:** Confirm DESTINATION and INTERNAL_DESTINATION_BUCKET settings in Lambda function. Ensure Lambda execution role has necessary permissions.
+
+5. **Original File Not Deleted After Processing**
+   - **Potential Cause:** DELETE_ORIGINAL variable set to False.
+   - **Solution:** Check and set the DELETE_ORIGINAL variable in the script to True if original file deletion is required.
+
+6. **Performance Issues or Timeouts**
+   - **Potential Cause:** Large file sizes or insufficient Lambda function timeout/memory settings.
+   - **Solution:** Adjust the timeout and memory settings of the Lambda function as needed.
+

@@ -9,12 +9,11 @@ s3_client = boto3.client('s3')
 
 # General script options
 DELETE_ORIGINAL = True  # Set to False if you don't want to delete the original file
-DESTINATION = "Internal S3" # Options "Internal S3" or "External S3" or "Azure"
-OUTPUT_FORMAT = "json"  # Options: "ndjson", "json", "json.gz" (json.gz option is for azure only)
+DESTINATION = "Internal S3"  # Options "Internal S3" or "External S3" or "Azure"
+OUTPUT_FORMAT = "ndjson"  # Options: "ndjson", "json", "json.gz" (json.gz option is for azure only)
 
 # S3 General Destination Options
 SUFFIX_MODE = "remove"  # Modes: "add" or "remove"
-
 ORIGINAL_SUFFIX = "unprocessed"  # The suffix in the original folder name (E.g. Cloud WAF sends original files to 'logs-unprocessed'; reformatted logs are then moved to 'logs' prefix).
 NEW_SUFFIX = ""  # The suffix to add in the new folder name (E.g. Cloud WAF sends original files to 'logs'; reformatted logs are then moved to 'logs-ndjson' prefix).
 
@@ -31,8 +30,8 @@ EXTERNAL_DESTINATION_BUCKET = ''
 EXTERNAL_PREFIX = ''  # End with a slash if specified, otherwise, keep it empty
 
 # Azure Destination Options
-ACCOUNT_NAME = '' # enter the name of the azure storage account
-CONTAINER_NAME= '' # enter the name of the storage account container
+ACCOUNT_NAME = ''  # enter the name of the azure storage account
+CONTAINER_NAME = ''  # enter the name of the storage account container
 SAS_TOKEN = ''  # SAS token details
 
 if DESTINATION == "External S3":
@@ -42,6 +41,7 @@ if DESTINATION == "External S3":
         aws_secret_access_key=EXTERNAL_AWS_SECRET_ACCESS_KEY,
         region_name=EXTERNAL_BUCKET_REGION
     )
+
 
 def lambda_handler(event, context):
     print("Lambda invoked.")
@@ -53,103 +53,133 @@ def lambda_handler(event, context):
     print(f"Bucket: {bucket}")
     print(f"Key: {key}")
 
-    # Get the file from S3
-    s3_response = s3_client.get_object(Bucket=bucket, Key=key)
-    file_content = s3_response['Body'].read()
+    # Download the file to a temporary path
+    download_path = '/tmp/{}'.format(key.split('/')[-1])
+    try:
+        s3_client.download_file(bucket, key, download_path)
+    except Exception as e:
+        print(f"Error downloading file from S3: {e}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Failed to download file from S3.')
+        }
+
+    output_path = download_path
+    print(f"first Initial Output Path: {output_path}")
+
 
     print("File contents read successfully.")
 
-    if OUTPUT_FORMAT == "ndjson":
-        # Transform JSON.gz to NDJSON
-        data = json.loads(gzip.decompress(file_content).decode('utf-8'))
-        ndjson_content = '\n'.join(json.dumps(item) for item in data)
-        file_content = ndjson_content.encode('utf-8')  # Convert back to bytes for upload
+    if OUTPUT_FORMAT != "json.gz":
+        try:
+            with gzip.open(download_path, 'rt') as f:
+                data = json.load(f)
 
-    elif OUTPUT_FORMAT == "json":
-        # Decompress the JSON.gz to JSON
-        file_content = gzip.decompress(file_content)
+            if OUTPUT_FORMAT == "ndjson":
+                transformed_content = '\n'.join(json.dumps(item) for item in data)
+            elif OUTPUT_FORMAT == "json":  # Assuming "json"
+                transformed_content = json.dumps(data)
+
+            # Write to a new file
+            output_path = '/tmp/{}'.format(key.split('/')[-1])
+            print(f"second Initial Output Path: {output_path}")
+            with open(output_path, 'w') as f:
+                f.write(transformed_content)
+
+        except (gzip.BadGzipFile, json.JSONDecodeError) as e:
+            print(f"Error during file transformation: {e}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps('Failed during file transformation.')
+            }
 
     print(f"Transformation to {OUTPUT_FORMAT} done.")
 
     if DESTINATION.endswith("S3"):
-        # Determine the output path
         first_folder = key.split('/')[0]
         if SUFFIX_MODE == 'remove':
             first_folder = first_folder.replace(f'-{ORIGINAL_SUFFIX}', '')
         elif SUFFIX_MODE == 'add':
             first_folder = f'{first_folder}-{NEW_SUFFIX}'
-
-        # Modify the output path logic
+    
+        # Construct the output key by replacing the original first folder with the modified one
         output_key = key.replace(key.split('/')[0], first_folder).replace('.json.gz', output_extension)
-        output_path = f'/tmp/{output_key.split("/")[-1]}'
-        print(f"Writing transformed content to: {output_path}")
 
-        with open(output_path, 'w') as f:
-            f.write(file_content)
-
-        # Upload the transformed content to the different folder in the same AWS S3 bucket
+        if not output_key.endswith(output_extension):
+            output_key = output_key.replace('.json.gz', '') + output_extension
+    
         print(f"Uploading transformed content to S3 bucket: {bucket} and key: {output_key}")
-        s3_client.upload_file(output_path, bucket, output_key)
-        if DESTINATION == 'Internal S3':
-            if INTERNAL_DESTINATION_BUCKET:
-                # Upload the transformed content to different AWS S3 bucket in the same account
-                destination_bucket = INTERNAL_DESTINATION_BUCKET
-            else:
-                destination_bucket = bucket
-            try:
-                s3_client.upload_file(output_path, destination_bucket, output_key)
-            except Exception as e:
-                print(f"Error uploading to internal S3: {e}")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps('Failed to process file!')
-                }
-         # Upload the transformed content to External AWS S3 bucket
-        elif DESTINATION == 'External S3':
-            if not 'external_s3_client' in globals():
-                print("Error: External S3 client not initialized.")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps('Failed to process file!')
-                }
+    
+        # Determine the destination bucket
+        destination_bucket = INTERNAL_DESTINATION_BUCKET if DESTINATION == 'Internal S3' else EXTERNAL_DESTINATION_BUCKET
+        if not destination_bucket:  # If INTERNAL_DESTINATION_BUCKET is None, use the source bucket
+            destination_bucket = bucket
+    
+        # Ensure destination_key is set properly
+        destination_key = f"{EXTERNAL_PREFIX}{output_key}" if DESTINATION == 'External S3' else output_key
+    
+        # Ensure output_path is not None
+        if not output_path:
+            print("Error: Output path is None.")
+            return {
+                'statusCode': 500,
+                'body': json.dumps('Output path is None.')
+            }
+    
+        # Select the appropriate S3 client
+        s3_upload_client = s3_client if DESTINATION == 'Internal S3' else external_s3_client
+    
+        try:
+            s3_upload_client.upload_file(output_path, destination_bucket, destination_key)
+            print("Upload complete")
+        except Exception as e:
+            print(f"Error uploading to {DESTINATION}: {e}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps('Failed to process file!')
+            }
 
-            destination_bucket = EXTERNAL_DESTINATION_BUCKET
-            destination_key = f"{EXTERNAL_PREFIX}{output_key}"
-
-            try:
-                external_s3_client.upload_file(output_path, destination_bucket, destination_key)
-                print("upload complete")
-            except Exception as e:
-                print(f"Error uploading to external S3: {e}")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps('Failed to process file!')
-                }
-    # Upload the content to an Azure Storage blob 
+            
     elif DESTINATION == 'Azure':
-        base_blob_name = key.rsplit('.json.gz', 1)[0]  # Remove .json.gz extension
-        BLOB_NAME = f"{base_blob_name}.{OUTPUT_FORMAT}"
-        # Use urllib3 with SAS token
+        # Split the key to get individual parts
+        path_parts = key.split('/')
+    
+        # Modify the first folder based on SUFFIX_MODE
+        first_folder = path_parts[0]
+        if SUFFIX_MODE == 'remove':
+            first_folder = first_folder.replace(f'-{ORIGINAL_SUFFIX}', '')
+        elif SUFFIX_MODE == 'add':
+            first_folder = f'{first_folder}-{NEW_SUFFIX}'
+    
+        # Reconstruct the directory structure with the modified first folder
+        modified_directory_structure = '/'.join([first_folder] + path_parts[1:-1])
+    
+        # Get file name without '.json.gz' and add the correct output format
+        file_name = path_parts[-1].rsplit('.json.gz', 1)[0] + f".{OUTPUT_FORMAT}"
+    
+        # Construct BLOB_NAME with the correct folder structure and file extension
+        BLOB_NAME = f"{modified_directory_structure}/{file_name}"
+    
+        # Azure Blob Storage URL
         url = f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER_NAME}/{BLOB_NAME}{SAS_TOKEN}"
-
-        # Headers for the request
+    
+        # Set headers based on the output format
         headers = {
             'x-ms-blob-type': 'BlockBlob',
-            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Type': 'application/x-ndjson' if OUTPUT_FORMAT == "ndjson" else 'application/json; charset=utf-8'
         }
-        if format == "ndjson":
-            headers['Content-Type'] = 'application/x-ndjson'
-
-
-        # Initialize the HTTP client
+    
+        # Read file content for upload
+        with open(output_path, 'rb') as f:
+            upload_content = f.read()
+    
+        # Initialize HTTP client and upload to Azure Blob Storage
         http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
+        response = http.request('PUT', url, body=upload_content, headers=headers)
+    
+        if response.status != 201:
+            raise Exception(f"Failed to upload blob. Status: {response.status}, Reason: {response.data.decode('utf-8')}")
 
-        # Upload to Azure Blob Storage using urllib3
-        response = http.request('PUT', url, body=file_content, headers=headers)
-
-        if response.status != 201:  # 201 is the expected status code for a successful blob creation
-            raise Exception(
-                f"Failed to upload blob. Status: {response.status}, Reason: {response.data.decode('utf-8')}")
     # Optionally delete the original file
     if DELETE_ORIGINAL:
         s3_client.delete_object(Bucket=bucket, Key=key)

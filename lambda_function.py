@@ -65,8 +65,6 @@ def lambda_handler(event, context):
         }
 
     output_path = download_path
-    print(f"first Initial Output Path: {output_path}")
-
 
     print("File contents read successfully.")
 
@@ -82,7 +80,6 @@ def lambda_handler(event, context):
 
             # Write to a new file
             output_path = '/tmp/{}'.format(key.split('/')[-1])
-            print(f"second Initial Output Path: {output_path}")
             with open(output_path, 'w') as f:
                 f.write(transformed_content)
 

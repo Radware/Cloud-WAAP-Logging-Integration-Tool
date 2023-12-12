@@ -4,6 +4,8 @@ import json
 import urllib.parse
 import urllib3
 import certifi
+import os
+import shutil
 
 s3_client = boto3.client('s3')
 
@@ -45,6 +47,25 @@ if DESTINATION == "External S3":
 
 def lambda_handler(event, context):
     print("Lambda invoked.")
+
+    # Check if /tmp has any files or directories
+    tmp_dir = '/tmp'
+    if os.listdir(tmp_dir):  # This checks if the list is non-empty
+        print("Data found in /tmp, proceeding to delete.")
+        # Iterate through each item in /tmp and delete
+        for filename in os.listdir(tmp_dir):
+            file_path = os.path.join(tmp_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f'Failed to delete {file_path}. Reason: {e}')
+    else:
+        print("No data in /tmp. No deletion needed.")
+
+    
     output_extension = f".{OUTPUT_FORMAT}"
     # Extract bucket and file key from the event
     bucket = event['Records'][0]['s3']['bucket']['name']
@@ -180,6 +201,14 @@ def lambda_handler(event, context):
     # Optionally delete the original file
     if DELETE_ORIGINAL:
         s3_client.delete_object(Bucket=bucket, Key=key)
+
+    # Delete the downloaded file
+    try:
+        os.remove(download_path)
+        print(f"Downloaded file {download_path} deleted.")
+    except Exception as e:
+        print(f"Warning: Could not delete the downloaded file: {e}")
+
 
     print("Lambda execution completed.")
 

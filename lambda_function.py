@@ -9,6 +9,9 @@ import shutil
 
 s3_client = boto3.client('s3')
 
+# Radware Cloud WAAP Logging Intergration Tool
+# Labmda function - version 1.1 
+
 # General script options
 DELETE_ORIGINAL = True  # Set to False if you don't want to delete the original file
 DESTINATION = "Internal S3"  # Options "Internal S3" or "External S3" or "Azure"

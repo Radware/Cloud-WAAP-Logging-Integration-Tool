@@ -16,7 +16,7 @@ Additionally, the tool's key capabilities include decompressing .json.gz files f
   - **Azure Storage Account:** An Azure Storage Account and a corresponding SAS Token.
 
 ## Current Version
-Version 1.0 (Initial Release)
+Version 1.1
 
 ## Features
 - **Decompression:** Decompress JSON.GZ files to extract JSON content.
@@ -93,6 +93,8 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 1.1 - 02/01/2024
+- Added Lambda-initiated temporary file deletion to prevent /tmp folder overuse during high-rate concurrent invocations.
 ### Version 1.0 - 23/11/2023
 - Initial release of the tool.
 

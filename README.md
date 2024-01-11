@@ -8,7 +8,7 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
 Additionally, the tool's key capabilities include decompressing .json.gz files for easier access, transforming logs into JSON or NDJSON formats to suit different analytical needs, and offering the flexibility to transfer logs to either internal/external AWS S3 buckets or Azure Blob Storage.
 
 ## Prerequisites
-- **Download Zip Package:** Download the zip package available in Github with the name Cloud-WAAP-Logging-Integration-Tool-Lambda-v{version number}.zip.
+- **Download Zip Package:** Download the latest zip package available in Github with the name Cloud-WAAP-Logging-Integration-Tool-Lambda.zip.
 - **AWS Knowledge:** A basic understanding of the AWS cloud platform.
 - **AWS Account:** An AWS account with access to S3 and Lambda services.
 - **Radware Cloud WAAP:** Radware's Cloud WAAP configured to send logs to an AWS S3 bucket.

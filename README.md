@@ -5,9 +5,10 @@ The Cloud WAAP Logging Integration Tool is specifically designed to work with Ra
 
 This guide provides detailed instructions on utilizing an AWS Lambda function for effective log format transformation and management.
 
-Additionally, the tool's key capabilities include decompressing .json.gz files for easier access, transforming logs into CEF, LEEF, JSON or NDJSON formats to suit different analytical needs, and offering the flexibility to transfer logs to either internal/external AWS S3 buckets or Azure Blob Storage.
+Additionally, the tool's key capabilities include decompressing .json.gz files for easier access, transforming logs into JSON or NDJSON formats to suit different analytical needs, and offering the flexibility to transfer logs to either internal/external AWS S3 buckets or Azure Blob Storage.
 
 ## Prerequisites
+- **Download Zip Package:** Download the latest zip package available in Github with the name Cloud-WAAP-Logging-Integration-Tool-Lambda.zip.
 - **AWS Knowledge:** A basic understanding of the AWS cloud platform.
 - **AWS Account:** An AWS account with access to S3 and Lambda services.
 - **Radware Cloud WAAP:** Radware's Cloud WAAP configured to send logs to an AWS S3 bucket.
@@ -16,11 +17,11 @@ Additionally, the tool's key capabilities include decompressing .json.gz files f
   - **Azure Storage Account:** An Azure Storage Account and a corresponding SAS Token.
 
 ## Current Version
-Version 1.0 (Initial Release)
+Version 1.1
 
 ## Features
 - **Decompression:** Decompress JSON.GZ files to extract JSON content.
-- **Log Reformatting:** Converts AWS S3 logs from JSON.GZ format to CEF, LEEF, NDJSON or JSON.
+- **Log Reformatting:** Converts AWS S3 logs from JSON.GZ format to NDJSON or JSON.
 - **Transfer to Custom AWS S3 or Azure Blob:** Uploads files to Azure Blob Storage or specified S3 bucket.
 - **Folder Suffix Customization:** Add or remove suffixes in the folder name for saved files.
 - **Optional File Deletion:** Delete original files post-processing.
@@ -50,7 +51,7 @@ Set the following in the Lambda function code:
   - Example: `DELETE_ORIGINAL = True`
 - `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`.
   - Example: `DESTINATION = "Azure"`
-- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"cef", "leef", "ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure only).
+- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure only).
   - Example: `OUTPUT_FORMAT = "json"`
 - `SUFFIX_MODE` (str): Modes for handling folder name suffixes. Options are `"add"` or `"remove"`.
   - Example: `SUFFIX_MODE = "add"`
@@ -93,6 +94,8 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 1.1 - 02/01/2024
+- Added Lambda-initiated temporary file deletion to prevent /tmp folder overuse during high-rate concurrent invocations.
 ### Version 1.0 - 23/11/2023
 - Initial release of the tool.
 
@@ -129,4 +132,3 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 6. **Performance Issues or Timeouts**
    - **Potential Cause:** Large file sizes or insufficient Lambda function timeout/memory settings.
    - **Solution:** Adjust the timeout and memory settings of the Lambda function as needed.
-

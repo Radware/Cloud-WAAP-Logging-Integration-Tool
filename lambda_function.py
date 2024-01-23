@@ -128,7 +128,7 @@ def lambda_handler(event, context):
         else:
             # Use the DESTINATION_FOLDER for the output key
             file_name = key.split('/')[-1]
-            output_key = f"{DESTINATION_FOLDER}/{file_name}"
+            output_key = f"{DESTINATION_FOLDER}/{file_name}".replace('.json.gz', output_extension)
 
         if not output_key.endswith(output_extension):
             output_key += output_extension

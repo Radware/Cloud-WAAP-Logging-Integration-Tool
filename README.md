@@ -17,13 +17,14 @@ Additionally, the tool's key capabilities include decompressing .json.gz files f
   - **Azure Storage Account:** An Azure Storage Account and a corresponding SAS Token.
 
 ## Current Version
-Version 1.1
+Version 1.2
 
 ## Features
 - **Decompression:** Decompress JSON.GZ files to extract JSON content.
 - **Log Reformatting:** Converts AWS S3 logs from JSON.GZ format to NDJSON or JSON.
 - **Transfer to Custom AWS S3 or Azure Blob:** Uploads files to Azure Blob Storage or specified S3 bucket.
-- **Folder Suffix Customization:** Add or remove suffixes in the folder name for saved files.
+- **Flexible Folder Structure:** Option to retain original folder structure or consolidate files into a specific directory.
+- **Folder Suffix Customization:** Add or remove suffixes in the folder name for saved files (applicable when original folder structure is retained).
 - **Optional File Deletion:** Delete original files post-processing.
 
 ## Operational Sequence
@@ -52,7 +53,14 @@ Set the following in the Lambda function code:
 - `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`.
   - Example: `DESTINATION = "Azure"`
 - `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure only).
-  - Example: `OUTPUT_FORMAT = "json"`
+  - Example: `OUTPUT_FORMAT = "ndjson"`
+- `KEEP_ORIGINAL_FOLDER_STRUCTURE` (bool): Set to `False` to ignore original folder structure.
+  - Example: `KEEP_ORIGINAL_FOLDER_STRUCTURE = False`
+- `DESTINATION_FOLDER` (str): Used when `KEEP_ORIGINAL_FOLDER_STRUCTURE` is `False`.
+  - Example: `DESTINATION_FOLDER = "specific_directory"`
+
+Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `KEEP_ORIGINAL_FOLDER_STRUCTURE` is `True`.
+
 - `SUFFIX_MODE` (str): Modes for handling folder name suffixes. Options are `"add"` or `"remove"`.
   - Example: `SUFFIX_MODE = "add"`
 - `ORIGINAL_SUFFIX` (str): Suffix in the original folder name to be removed if `SUFFIX_MODE` is `"remove"`.
@@ -94,6 +102,9 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 1.2 - 21/01/2024
+- Added options to control folder structure in the destination storage.
+- Enhanced configuration flexibility for Azure Blob and S3 destinations.
 ### Version 1.1 - 02/01/2024
 - Added Lambda-initiated temporary file deletion to prevent /tmp folder overuse during high-rate concurrent invocations.
 ### Version 1.0 - 23/11/2023
@@ -132,4 +143,3 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 6. **Performance Issues or Timeouts**
    - **Potential Cause:** Large file sizes or insufficient Lambda function timeout/memory settings.
    - **Solution:** Adjust the timeout and memory settings of the Lambda function as needed.
-

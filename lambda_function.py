@@ -12,6 +12,7 @@ s3_client = boto3.client('s3')
 # Radware Cloud WAAP Logging Intergration Tool
 # Labmda function - version 1.2 
 
+
 # General script options
 DELETE_ORIGINAL = True  # Delete the original file after processing
 DESTINATION = "Internal S3"  # Destination type: "Internal S3", "External S3", or "Azure"

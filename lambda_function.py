@@ -70,21 +70,28 @@ def lambda_handler(event, context):
     else:
         print("No data in /tmp. No deletion needed.")
 
-    
-    output_extension = f".{OUTPUT_FORMAT}"
-    # Extract bucket and file key from the event
-    bucket = event['Records'][0]['s3']['bucket']['name']
-    key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'])
-
-    print(f"Bucket: {bucket}")
-    print(f"Key: {key}")
-
-    # Download the file to a temporary path
-    download_path = '/tmp/{}'.format(key.split('/')[-1])
     try:
+        output_extension = f".{OUTPUT_FORMAT}"
+        # Extract bucket and file key from the event
+        bucket = event['Records'][0]['s3']['bucket']['name']
+        key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'])
+
+        print(f"Bucket: {bucket}")
+        print(f"Key: {key}")
+
+        # Download the file to a temporary path
+        download_path = '/tmp/{}'.format(key.split('/')[-1])
         s3_client.download_file(bucket, key, download_path)
+    except KeyError as e:
+        print(f"Error: Event structure not as expected, missing key: {e}")
+        # Output the event for debugging purposes in a readable way
+        print("Event data:", json.dumps(event, indent=4))
+        return {
+            'statusCode': 400,
+            'body': json.dumps('Event structure not as expected, execution stopped.')
+        }
     except Exception as e:
-        print(f"Error downloading file from S3: {e}")
+        print(f"Error processing file: {e}")
         return {
             'statusCode': 500,
             'body': json.dumps('Failed to download file from S3.')

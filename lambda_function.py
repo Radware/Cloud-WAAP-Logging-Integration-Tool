@@ -10,7 +10,7 @@ import shutil
 s3_client = boto3.client('s3')
 
 # Radware Cloud WAAP Logging Intergration Tool
-# Labmda function - version 1.2 
+# Labmda function - version 1.3
 
 
 # General script options

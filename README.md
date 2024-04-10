@@ -1,31 +1,30 @@
 # Cloud WAAP Logging Integration Tool
 
 ## Overview
-The Cloud WAAP Logging Integration Tool is specifically designed to work with Radware's Cloud WAAP. Its primary function is to facilitate the handling of logs once they are transferred to an AWS S3 bucket. This tool is pivotal in transforming and efficiently managing these logs, enhancing their compatibility for integration with various services and SIEMs.
+The Cloud WAAP Logging Integration Tool is specifically designed to work with Radware's Cloud WAAP. Its primary function is to facilitate the handling of logs once they are transferred to an AWS S3 bucket. The tool is pivotal in transforming and efficiently managing these logs, enhancing their compatibility for integration with various services and SIEMs.
 
 This guide provides detailed instructions on utilizing an AWS Lambda function for effective log format transformation and management.
 
-Additionally, the tool's key capabilities include decompressing .json.gz files for easier access, transforming logs into JSON or NDJSON formats to suit different analytical needs, and offering the flexibility to transfer logs to either internal/external AWS S3 buckets or Azure Blob Storage.
-
 ## Prerequisites
-- **Download Zip Package:** Download the latest zip package available in Github with the name Cloud-WAAP-Logging-Integration-Tool-Lambda.zip.
-- **AWS Knowledge:** A basic understanding of the AWS cloud platform.
-- **AWS Account:** An AWS account with access to S3 and Lambda services.
-- **Radware Cloud WAAP:** Radware's Cloud WAAP configured to send logs to an AWS S3 bucket.
-- **For Azure Blob Storage Transfer:**
-  - **Azure Knowledge:** A basic understanding of the Azure cloud platform.
-  - **Azure Storage Account:** An Azure Storage Account and a corresponding SAS Token.
+- **AWS Account**: An active AWS account with permissions to manage Lambda and S3 services.
+- **Labmda Runtime**: Support Lambda Python runtime version 3.8 up to 3.12.
+- **Radware Cloud WAAP**: Configuration in place to send logs to an AWS S3 bucket.
+- **Permissions**: Proper IAM roles and policies that allow the Lambda function to read from S3 buckets and write to the desired destinations.
+- **For SFTP Transfers**:
+  - SFTP server access with credentials or SSH keys for secure file transfer.
+- **For Azure Blob Storage Transfer**:
+  - An Azure Storage Account and access credentials, such as a SAS Token.\
 
 ## Current Version
-Version 1.3
+Version 2.0.0
 
 ## Features
-- **Decompression:** Decompress JSON.GZ files to extract JSON content.
-- **Log Reformatting:** Converts AWS S3 logs from JSON.GZ format to NDJSON or JSON.
-- **Transfer to Custom AWS S3 or Azure Blob:** Uploads files to Azure Blob Storage or specified S3 bucket.
-- **Flexible Folder Structure:** Option to retain original folder structure or consolidate files into a specific directory.
-- **Folder Suffix Customization:** Add or remove suffixes in the folder name for saved files (applicable when original folder structure is retained).
-- **Optional File Deletion:** Delete original files post-processing.
+- **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
+- **Flexible Output Formatting**: Users can now specify `ndjson` as an output format, in addition to the previously supported `json` and `json.gz` formats.
+- **Enhanced Folder Structure Control**: Choose to either maintain the original folder hierarchy or restructure the output to a specified directory path.
+- **Suffix Management**: Customize folder names by appending or removing specified suffixes, providing better organization of processed files.
+- **Security and Compliance**: Ensure that logs are transferred securely, maintaining compliance with organizational security policies.
+- **Automated Post-Processing Cleanup**: Option to delete original files after successful processing to keep your storage organized and cost-efficient.
 
 ## Operational Sequence
 The tool operates in the following sequence:
@@ -70,19 +69,48 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 - `INTERNAL_DESTINATION_BUCKET` (str or None): The S3 bucket where the transformed file will be uploaded if `DESTINATION` is `"Internal S3"`. If `None`, defaults to the source bucket.
   - Example: `INTERNAL_DESTINATION_BUCKET = "my-internal-bucket"`
 
-For External S3 Destination:
-- `EXTERNAL_AWS_ACCESS_KEY_ID`, `EXTERNAL_AWS_SECRET_ACCESS_KEY`, `EXTERNAL_BUCKET_REGION`: Credentials and region for the external S3 bucket.
-- `EXTERNAL_DESTINATION_BUCKET` (str): The S3 bucket where the transformed file will be uploaded if `DESTINATION` is `"External S3"`.
-- `EXTERNAL_PREFIX` (str): Prefix for the transformed file in the external S3 bucket. End with a slash if specified.
-  - Example: `EXTERNAL_DESTINATION_BUCKET = "my-external-bucket"`
+### External S3 Options
 
-For Azure Destination:
+#### General External S3 Options
+- `EXTERNAL_ACCESS_KEY_ID` (str): Access key for external AWS S3 access.
+  - Example: `EXTERNAL_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"`
+- `EXTERNAL_SECRET_ACCESS_KEY` (str): Secret access key for external AWS S3 access.
+  - Example: `EXTERNAL_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
+- `EXTERNAL_DESTINATION_BUCKET` (str): The name of the external S3 bucket where logs will be uploaded.
+  - Example: `EXTERNAL_DESTINATION_BUCKET = "my-external-bucket"`
+- `EXTERNAL_PREFIX` (str): Optional prefix for organizing uploaded files within the external S3 bucket. Ensure to end with a "/" if specified.
+  - Example: `EXTERNAL_PREFIX = "logs/"`  # Uploads files to "logs/" directory in the bucket.
+
+#### AWS-specific S3 Options
+- `EXTERNAL_BUCKET_REGION` (str): AWS region where the external S3 bucket is located.
+  - Example: `EXTERNAL_BUCKET_REGION = "us-east-1"`
+
+#### Dell ECS-specific S3 Options
+- `EXTERNAL_ENDPOINT_URL` (str): Endpoint URL for accessing Dell ECS S3-compatible storage.
+  - Example: `EXTERNAL_ENDPOINT_URL = "https://ecs.example.com"`
+- `EXTERNAL_ENDPOINT_SSL_VERIFY` (bool): Whether to verify SSL certificates when accessing Dell ECS S3. Recommended to set to `True` for production environments.
+  - Example: `EXTERNAL_ENDPOINT_SSL_VERIFY = False`
+
+### Azure Destination Options
 - `ACCOUNT_NAME` (str): Name of the Azure storage account.
   - Example: `ACCOUNT_NAME = "myazureaccount"`
 - `CONTAINER_NAME` (str): Name of the Azure storage container.
   - Example: `CONTAINER_NAME = "mycontainer"`
 - `SAS_TOKEN` (str): SAS token for Azure Blob Storage access.
   - Example: `SAS_TOKEN = "?sv=...[token]..."`
+
+### SFTP Destination Options
+- `SFTP_SERVER` (str): Hostname or IP address of the SFTP server.
+  - Example: `SFTP_SERVER = "sftp.example.com"`
+- `SFTP_PORT` (int): Port number used for the SFTP connection. Typically, this is port 22.
+  - Example: `SFTP_PORT = 22`
+- `SFTP_USERNAME` (str): Username for SFTP authentication.
+  - Example: `SFTP_USERNAME = "myusername"`
+- `SFTP_PASSWORD` (str): Password for SFTP authentication. It's recommended to use SSH keys for authentication if possible for enhanced security.
+  - Example: `SFTP_PASSWORD = "mypassword"`  # Consider using an SSH key instead
+- `SFTP_TARGET_DIR` (str): Target directory on the SFTP server where files will be uploaded.
+  - Example: `SFTP_TARGET_DIR = "/path/to/destination/directory"`
+
 
 ## Deployment & Setup
 
@@ -102,14 +130,18 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
-### Version 1.3 - 01/02/2024
+### Version 2.0.0 - 10/04/2024
+- **Added Support for Dell ECS and SFTP**: Expanded the destination options to include Dell ECS S3-compatible storage and SFTP servers, allowing for a wider range of log transfer destinations.
+- **Log Enrichment Features**: Introduced log enrichment capabilities to ensure each log contains an `applicationName` and to add a `logType` to every log. This enhancement improves the quality and usability of the log data for analysis and integration with various services and SIEMs.
+- **Paramiko Layer for SFTP Transfers**: Implemented the use of a `paramiko-layer.zip` Lambda layer to facilitate secure SFTP file transfers. This layer is necessary for the function's operation with SFTP destinations and is compatible with Python runtimes 3.8 to 3.12.
+### Version 1.3.0 - 01/02/2024
 - Enhanced error handeling when reading from AWS event dictionary.
-### Version 1.2 - 21/01/2024
+### Version 1.2.0 - 21/01/2024
 - Added options to control folder structure in the destination storage.
 - Enhanced configuration flexibility for Azure Blob and S3 destinations.
-### Version 1.1 - 02/01/2024
+### Version 1.1.0 - 02/01/2024
 - Added Lambda-initiated temporary file deletion to prevent /tmp folder overuse during high-rate concurrent invocations.
-### Version 1.0 - 23/11/2023
+### Version 1.0.0 - 23/11/2023
 - Initial release of the tool.
 
 ## Lambda IAM Permissions
@@ -117,6 +149,35 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 - Permissions for S3 bucket access (`GetObject`, `PutObject`, `DeleteObject`).
 - Permissions for logging to Amazon CloudWatch Logs.
 - Additional permissions for external S3 bucket interactions, if applicable.
+
+
+## Additional Notes for SFTP Transfers
+
+For the Lambda function to support SFTP transfers, it must utilize the `paramiko` library, which is not included by default in the AWS Lambda Python runtime. To facilitate this, a Lambda layer containing the `paramiko` library and its dependencies is required.
+
+### Adding the Paramiko Layer
+
+1. **Download the Paramiko Layer**:
+   - The `paramiko-layer.zip` is available for download from the GitHub release page of the Cloud WAAP Logging Integration Tool, Version 2.0.
+   - Navigate to the [Releases](https://github.com/Radware/Cloud-WAAP-Logging-Integration-Tool/releases) section of the project repository and download the `paramiko-layer.zip` file associated with the 2.0 release.
+
+2. **Upload the Layer to AWS Lambda**:
+   - In the AWS Lambda Console, go to the Layers section and click on "Create layer".
+   - Upload the downloaded `paramiko-layer.zip` file.
+   - Specify the compatible runtimes as Python 3.8, 3.9, 3.10, 3.11, and 3.12 to ensure compatibility across different Lambda function configurations.
+
+3. **Attach the Layer to Your Lambda Function**:
+   - Open the configuration for your Lambda function in the AWS Lambda Console.
+   - Under the "Layers" section, choose "Add a layer" and select the uploaded `paramiko-layer` from your layers list.
+   - Save the changes to ensure the layer is applied to your function.
+
+This setup is crucial for the Lambda function to facilitate secure SFTP file transfers, making it possible to use the SFTP destination option within the Cloud WAAP Logging Integration Tool.
+
+## Troubleshooting
+
+- **Issue**: Lambda function fails to initiate SFTP transfers.
+  - **Solution**: Ensure the `paramiko-layer` has been correctly added to your Lambda function. Check that the layer’s Python runtime version is compatible with your Lambda function's runtime. Also, verify the `paramiko-layer.zip` has been downloaded from the correct release and added as a layer in your Lambda configuration.
+
 
 ## Troubleshooting
 

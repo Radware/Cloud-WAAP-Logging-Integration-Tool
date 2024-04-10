@@ -1,4 +1,5 @@
 import boto3
+from botocore.client import Config
 import gzip
 import json
 import urllib.parse
@@ -6,48 +7,152 @@ import urllib3
 import certifi
 import os
 import shutil
+from cloudwaap_log_utils import CloudWAAPProcessor
 
 s3_client = boto3.client('s3')
 
-# Radware Cloud WAAP Logging Intergration Tool
-# Labmda function - version 1.3
+# Radware Cloud WAAP Logging Integration Tool
+# Lambda function - Version 2.0.0
 
+# ======================================================================
+# General Script Options
+# ======================================================================
+DELETE_ORIGINAL = True  # Whether to delete the original file after processing.
+DESTINATION = "Internal S3"  # Destination type: "Internal S3", "External S3", "Dell ECS S3", "SFTP" or "Azure".
+OUTPUT_FORMAT = "ndjson"  # Output file format: "ndjson", "json", "json.gz" (for Azure only).
+KEEP_ORIGINAL_FOLDER_STRUCTURE = True  # Whether to retain the original folder structure in the destination.
+DESTINATION_FOLDER = ""  # Destination folder when not retaining the original structure (empty for root).
+ENRICH_LOGS = False  # Enrich logs with additional metadata (logType, applicationName, tenantName).
 
-# General script options
-DELETE_ORIGINAL = True  # Delete the original file after processing
-DESTINATION = "Internal S3"  # Destination type: "Internal S3", "External S3", or "Azure"
-OUTPUT_FORMAT = "ndjson"  # Output file format: "ndjson", "json", "json.gz" (json.gz for Azure only)
-KEEP_ORIGINAL_FOLDER_STRUCTURE = True  # Control whether to keep the original folder structure
-DESTINATION_FOLDER = ""  # Destination folder when not retaining the original structure
+# ======================================================================
+# S3 Destination Options
+# ======================================================================
+SUFFIX_MODE = "remove"  # Suffix modification mode: "add" or "remove".
+ORIGINAL_SUFFIX = "unprocessed"  # Suffix to remove if SUFFIX_MODE is "remove".
+NEW_SUFFIX = ""  # New suffix to add if SUFFIX_MODE is "add".
 
-# Note: S3 options regarding suffix/prefix are relevant only if original folder structure is retained
-# S3 General Destination Options
-SUFFIX_MODE = "remove"  # Suffix modification mode: "add" or "remove"
-ORIGINAL_SUFFIX = "unprocessed"  # Suffix in the original folder name to be removed or replaced
-NEW_SUFFIX = ""  # Suffix to add in the new folder name, if SUFFIX_MODE is 'add'
+# --------------------
+# Internal S3 Options
+# --------------------
+INTERNAL_DESTINATION_BUCKET = None  # Bucket for internal S3 destination (defaults to source bucket if None).
 
-# S3 Internal Destination Options
-INTERNAL_DESTINATION_BUCKET = None  # Default to the source bucket if None
+# ======================================================================
+# External S3 Options
+# ======================================================================
 
-# S3 External Destination Options
-EXTERNAL_AWS_ACCESS_KEY_ID = ''
-EXTERNAL_AWS_SECRET_ACCESS_KEY = ''
-EXTERNAL_BUCKET_REGION = ''
+# ---------------------------------------
+# External S3 General Options
+# ---------------------------------------
+EXTERNAL_ACCESS_KEY_ID = ''
+EXTERNAL_SECRET_ACCESS_KEY = ''
 EXTERNAL_DESTINATION_BUCKET = ''
-EXTERNAL_PREFIX = ''  # Prefix for external S3 destination (end with a slash if specified)
+EXTERNAL_PREFIX = ''  # Prefix for external S3 destination (end with "/" if specified).
 
+# ---------------------------------------
+# External AWS S3 Options
+# ---------------------------------------
+EXTERNAL_BUCKET_REGION = ''  # AWS region for the external S3 bucket.
+
+# ---------------------------------------
+# External Dell ECS S3 Options
+# ---------------------------------------
+EXTERNAL_ENDPOINT_URL = ''  # Endpoint URL for Dell ECS S3-compatible storage.
+EXTERNAL_ENDPOINT_SSL_VERIFY = False  # Whether to verify SSL for Dell ECS S3 access.
+
+# ======================================================================
 # Azure Destination Options
-ACCOUNT_NAME = ''  # Azure storage account name
-CONTAINER_NAME = ''  # Azure storage account container name
-SAS_TOKEN = ''  # SAS token for Azure access
+# ======================================================================
+ACCOUNT_NAME = ''  # Azure storage account name.
+CONTAINER_NAME = ''  # Container name in the Azure storage account.
+SAS_TOKEN = ''  # SAS token for Azure container access.
+
+# ======================================================================
+# SFTP Destination Options
+# ======================================================================
+SFTP_SERVER = ''  # Hostname or IP of the SFTP server.
+SFTP_PORT = 22  # Port number for the SFTP server.
+SFTP_USERNAME = ''  # Username for SFTP authentication.
+SFTP_PASSWORD = ''  # Password for SFTP authentication (consider SSH key for security).
+SFTP_TARGET_DIR = ''  # Target directory on the SFTP server for file uploads.
+
+
+# Conditional import for paramiko
+if 'SFTP' in DESTINATION:
+    try:
+        import paramiko
+    except ImportError as e:
+        print("paramiko module is not available. SFTP functionality will not work.")
+        # Handle the absence of paramiko or disable SFTP features as appropriate
 
 if DESTINATION == "External S3":
     external_s3_client = boto3.client(
         's3',
-        aws_access_key_id=EXTERNAL_AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=EXTERNAL_AWS_SECRET_ACCESS_KEY,
+        aws_access_key_id=EXTERNAL_ACCESS_KEY_ID,
+        aws_secret_access_key=EXTERNAL_SECRET_ACCESS_KEY,
         region_name=EXTERNAL_BUCKET_REGION
     )
+
+elif DESTINATION == "Dell ECS S3":
+    # Set up the ECS S3 client
+    ecs_s3_client = boto3.client(
+        's3',
+        endpoint_url=EXTERNAL_ENDPOINT_URL,
+        aws_access_key_id=EXTERNAL_ACCESS_KEY_ID,
+        aws_secret_access_key=EXTERNAL_SECRET_ACCESS_KEY,
+        verify=EXTERNAL_ENDPOINT_SSL_VERIFY,
+        config=Config(signature_version='s3'),  # ECS uses S3 signature version
+        # region_name is optional here, ECS does not require it, but you can set if it is needed for some reason
+    )
+
+
+def enrich_log_data(logs, log_type, application_name, tenant_name):
+    """
+    Enrich each log entry with tenantName, logType, and applicationName.
+
+    :param logs: List of log dictionaries.
+    :param log_type: The type of the log.
+    :param application_name: Name of the application.
+    :param tenant_name: Name of the tenant.
+    :return: The enriched log list.
+    """
+    for log in logs:
+        log['logType'] = log_type
+        if log_type == 'WebDDoS':
+            if 'applicationName' not in log:
+                log['applicationName'] = application_name
+        if log_type != "Access" and 'tenantName' not in log:
+            log['tenantName'] = tenant_name
+    return logs
+
+
+def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
+    transport = paramiko.Transport((SFTP_SERVER, SFTP_PORT))
+    transport.connect(username=SFTP_USERNAME, password=SFTP_PASSWORD)  # Consider key-based authentication
+    sftp = paramiko.SFTPClient.from_transport(transport)
+
+    if keep_original_folder_structure:
+        # Ensure target directory exists
+        try:
+            sftp.chdir(target_dir)  # Test if target_dir exists
+        except IOError:
+            # Create directory structure if it does not exist
+            current_dir = ''
+            for dir in target_dir.split('/'):
+                current_dir = os.path.join(current_dir, dir)
+                try:
+                    sftp.chdir(current_dir)  # Test if this part of the dir exists
+                except IOError:
+                    sftp.mkdir(current_dir)  # Create if it does not exist
+
+    # Once the directory is confirmed to exist or if not keeping the original structure, upload the file
+    target_path = os.path.join(target_dir, os.path.basename(file_path)) if keep_original_folder_structure else target_dir
+    sftp.put(file_path, target_path)
+
+    sftp.close()
+    transport.close()
+    print(f"File {file_path} uploaded to SFTP at {target_path}.")
+
+
 
 
 def lambda_handler(event, context):
@@ -106,6 +211,14 @@ def lambda_handler(event, context):
             with gzip.open(download_path, 'rt') as f:
                 data = json.load(f)
 
+            if ENRICH_LOGS:
+                log_type = CloudWAAPProcessor.identify_log_type(key)
+                application_name = CloudWAAPProcessor.parse_application_name(key)
+                tenant_name = CloudWAAPProcessor.parse_tenant_name(key)
+
+                # Enrich the log data
+                data = enrich_log_data(data, log_type, application_name, tenant_name)
+
             if OUTPUT_FORMAT == "ndjson":
                 transformed_content = '\n'.join(json.dumps(item) for item in data)
             elif OUTPUT_FORMAT == "json":  # Assuming "json"
@@ -144,15 +257,29 @@ def lambda_handler(event, context):
         print(f"Uploading transformed content to S3 bucket: {bucket} and key: {output_key}")
 
         # Determine the destination bucket
-        destination_bucket = INTERNAL_DESTINATION_BUCKET if DESTINATION == 'Internal S3' else EXTERNAL_DESTINATION_BUCKET
-        if not destination_bucket:  # If INTERNAL_DESTINATION_BUCKET is None, use the source bucket
-            destination_bucket = bucket
+        if DESTINATION == 'Internal S3':
+            destination_bucket = INTERNAL_DESTINATION_BUCKET or bucket
+            destination_key = output_key
+            s3_upload_client = s3_client
+        elif DESTINATION == 'External S3':
+            destination_bucket = EXTERNAL_DESTINATION_BUCKET
+            destination_key = f"{EXTERNAL_PREFIX}{output_key}"
+            s3_upload_client = external_s3_client
+        if DESTINATION == 'Dell ECS S3':
+            destination_bucket = EXTERNAL_DESTINATION_BUCKET
+            # Construct the initial destination_key
+            if KEEP_ORIGINAL_FOLDER_STRUCTURE:
+                destination_key = f"{EXTERNAL_PREFIX}{output_key}"
+            else:
+                # If not keeping the original folder structure, use only the filename with the external prefix
+                filename = key.split('/')[-1]
+                destination_key = f"{EXTERNAL_PREFIX}{filename}".replace('.json.gz', output_extension)
 
-        # Ensure destination_key is set properly
-        destination_key = f"{EXTERNAL_PREFIX}{output_key}" if DESTINATION == 'External S3' else output_key
+            # Check if the destination_key starts with a '/', remove it if true
+            if destination_key.startswith('/'):
+                destination_key = destination_key[1:]
 
-        # Select the appropriate S3 client
-        s3_upload_client = s3_client if DESTINATION == 'Internal S3' else external_s3_client
+            s3_upload_client = ecs_s3_client
 
         try:
             s3_upload_client.upload_file(output_path, destination_bucket, destination_key)
@@ -163,7 +290,23 @@ def lambda_handler(event, context):
                 'statusCode': 500,
                 'body': json.dumps('Failed to process file!')
             }
-    
+
+    if DESTINATION == "SFTP":
+        old_path = output_path
+        output_path = output_path.replace('.json.gz', output_extension)
+        download_path = download_path.replace('.json.gz', output_extension)
+        os.rename(old_path, output_path)
+
+        # Determine the target directory
+        full_sftp_target_dir = SFTP_TARGET_DIR
+        if KEEP_ORIGINAL_FOLDER_STRUCTURE:
+            original_path_dirs = '/'.join(key.split('/')[:-1])  # Remove the filename
+            full_sftp_target_dir = os.path.join(SFTP_TARGET_DIR, original_path_dirs)
+
+        # Call the updated upload_to_sftp function with the determined target directory and folder structure preference
+        upload_to_sftp(output_path, full_sftp_target_dir, KEEP_ORIGINAL_FOLDER_STRUCTURE)
+
+
     elif DESTINATION == 'Azure':
         if KEEP_ORIGINAL_FOLDER_STRUCTURE:
             path_parts = key.split('/')

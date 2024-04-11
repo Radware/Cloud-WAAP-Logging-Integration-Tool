@@ -13,10 +13,10 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
 - **For SFTP Transfers**:
   - SFTP server access with credentials or SSH keys for secure file transfer.
 - **For Azure Blob Storage Transfer**:
-  - An Azure Storage Account and access credentials, such as a SAS Token.\
+  - An Azure Storage Account and access credentials, such as a SAS Token.
 
 ## Current Version
-Version 2.0.0
+Version 2.1.0
 
 ## Features
 - **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
@@ -49,9 +49,9 @@ Set the following in the Lambda function code:
 
 - `DELETE_ORIGINAL` (bool): If `True`, original files are deleted after processing. Default is `True`.
   - Example: `DELETE_ORIGINAL = True`
-- `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`.
+- `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`, `"Dell ECS S3"`, `"SFTP"`,
   - Example: `DESTINATION = "Azure"`
-- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure only).
+- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure, Dell ECS S3 and SFTP only).
   - Example: `OUTPUT_FORMAT = "ndjson"`
 - `KEEP_ORIGINAL_FOLDER_STRUCTURE` (bool): Set to `False` to ignore original folder structure.
   - Example: `KEEP_ORIGINAL_FOLDER_STRUCTURE = False`

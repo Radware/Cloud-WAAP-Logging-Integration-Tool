@@ -12,17 +12,17 @@ from cloudwaap_log_utils import CloudWAAPProcessor
 s3_client = boto3.client('s3')
 
 # Radware Cloud WAAP Logging Integration Tool
-# Lambda function - Version 2.0.0
+# Lambda function - Version 2.1.0
 
 # ======================================================================
 # General Script Options
 # ======================================================================
 DELETE_ORIGINAL = True  # Whether to delete the original file after processing.
 DESTINATION = "Internal S3"  # Destination type: "Internal S3", "External S3", "Dell ECS S3", "SFTP" or "Azure".
-OUTPUT_FORMAT = "ndjson"  # Output file format: "ndjson", "json", "json.gz" (for Azure only).
+OUTPUT_FORMAT = "ndjson"  # Output file format: "ndjson", "json", "json.gz" ("json.gz" is for Azure, Dell ECS S3 and SFTP only).
 KEEP_ORIGINAL_FOLDER_STRUCTURE = True  # Whether to retain the original folder structure in the destination.
 DESTINATION_FOLDER = ""  # Destination folder when not retaining the original structure (empty for root).
-ENRICH_LOGS = False  # Enrich logs with additional metadata (logType, applicationName, tenantName).
+ENRICH_LOGS = False  # Enrich logs with additional metadata (logType, applicationName, tenantName) Does not work when output format is set to json.gz.
 
 # ======================================================================
 # S3 Destination Options
@@ -58,6 +58,7 @@ EXTERNAL_BUCKET_REGION = ''  # AWS region for the external S3 bucket.
 # ---------------------------------------
 EXTERNAL_ENDPOINT_URL = ''  # Endpoint URL for Dell ECS S3-compatible storage.
 EXTERNAL_ENDPOINT_SSL_VERIFY = False  # Whether to verify SSL for Dell ECS S3 access.
+EXTERNAL_ENDPOINT_SIGNATURE_VERSION = "s3" # Choose between regular "s3", "s3v2" and "s3v4"
 
 # ======================================================================
 # Azure Destination Options
@@ -82,7 +83,6 @@ if 'SFTP' in DESTINATION:
         import paramiko
     except ImportError as e:
         print("paramiko module is not available. SFTP functionality will not work.")
-        # Handle the absence of paramiko or disable SFTP features as appropriate
 
 if DESTINATION == "External S3":
     external_s3_client = boto3.client(
@@ -100,8 +100,7 @@ elif DESTINATION == "Dell ECS S3":
         aws_access_key_id=EXTERNAL_ACCESS_KEY_ID,
         aws_secret_access_key=EXTERNAL_SECRET_ACCESS_KEY,
         verify=EXTERNAL_ENDPOINT_SSL_VERIFY,
-        config=Config(signature_version='s3'),  # ECS uses S3 signature version
-        # region_name is optional here, ECS does not require it, but you can set if it is needed for some reason
+        config=Config(signature_version=EXTERNAL_ENDPOINT_SIGNATURE_VERSION),  # ECS uses S3 signature version
     )
 
 
@@ -184,6 +183,8 @@ def lambda_handler(event, context):
         print(f"Bucket: {bucket}")
         print(f"Key: {key}")
 
+        file_extension = os.path.splitext(key)[1].lower()
+
         # Download the file to a temporary path
         download_path = '/tmp/{}'.format(key.split('/')[-1])
         s3_client.download_file(bucket, key, download_path)
@@ -206,7 +207,7 @@ def lambda_handler(event, context):
 
     print("File contents read successfully.")
 
-    if OUTPUT_FORMAT != "json.gz":
+    if OUTPUT_FORMAT != "json.gz" and file_extension != ".txt":
         try:
             with gzip.open(download_path, 'rt') as f:
                 data = json.load(f)
@@ -235,7 +236,8 @@ def lambda_handler(event, context):
                 'statusCode': 500,
                 'body': json.dumps('Failed during file transformation.')
             }
-
+    elif OUTPUT_FORMAT == "json.gz" or file_extension == ".txt" and DESTINATION in ['External S3', 'Dell ECS S3', 'SFTP']:
+        output_path = download_path  # Directly use the downloaded file for upload
     print(f"Transformation to {OUTPUT_FORMAT} done.")
 
     if DESTINATION.endswith("S3"):
@@ -273,7 +275,8 @@ def lambda_handler(event, context):
             else:
                 # If not keeping the original folder structure, use only the filename with the external prefix
                 filename = key.split('/')[-1]
-                destination_key = f"{EXTERNAL_PREFIX}{filename}".replace('.json.gz', output_extension)
+                destination_key = f"{EXTERNAL_PREFIX}{filename}".replace('.json.gz',
+                                                                    output_extension) if OUTPUT_FORMAT != "json.gz" else f"{EXTERNAL_PREFIX}{filename}"
 
             # Check if the destination_key starts with a '/', remove it if true
             if destination_key.startswith('/'):
@@ -292,19 +295,28 @@ def lambda_handler(event, context):
             }
 
     if DESTINATION == "SFTP":
-        old_path = output_path
-        output_path = output_path.replace('.json.gz', output_extension)
-        download_path = download_path.replace('.json.gz', output_extension)
-        os.rename(old_path, output_path)
 
-        # Determine the target directory
+        # For txt files, use the download path directly without renaming
+        if file_extension == ".txt":
+            output_path = download_path
+        else:
+            # For other file types, continue with the existing logic
+            old_path = output_path
+            output_path = output_path.replace('.json.gz',
+                                              output_extension) if OUTPUT_FORMAT != "json.gz" else output_path
+            download_path = download_path.replace('.json.gz',
+                                                  output_extension) if OUTPUT_FORMAT != "json.gz" else download_path
+            os.rename(old_path, output_path)
+
+        # Determine the target directory based on whether to keep the original folder structure
         full_sftp_target_dir = SFTP_TARGET_DIR
         if KEEP_ORIGINAL_FOLDER_STRUCTURE:
-            original_path_dirs = '/'.join(key.split('/')[:-1])  # Remove the filename
+            original_path_dirs = '/'.join(key.split('/')[:-1])  # Exclude the filename
             full_sftp_target_dir = os.path.join(SFTP_TARGET_DIR, original_path_dirs)
 
-        # Call the updated upload_to_sftp function with the determined target directory and folder structure preference
+        # Proceed to upload the file to the specified SFTP directory
         upload_to_sftp(output_path, full_sftp_target_dir, KEEP_ORIGINAL_FOLDER_STRUCTURE)
+
 
 
     elif DESTINATION == 'Azure':
@@ -318,6 +330,9 @@ def lambda_handler(event, context):
             modified_directory_structure = '/'.join([first_folder] + path_parts[1:-1])
             file_name = path_parts[-1].rsplit('.json.gz', 1)[0] + f".{OUTPUT_FORMAT}"
             BLOB_NAME = f"{modified_directory_structure}/{file_name}"
+        elif (file_extension == ".txt"):
+            file_name = key.split('/')[-1]
+            BLOB_NAME = f"{DESTINATION_FOLDER}/{file_name}"
         else:
             # Use the DESTINATION_FOLDER for the BLOB name
             file_name = key.split('/')[-1].rsplit('.json.gz', 1)[0] + f".{OUTPUT_FORMAT}"

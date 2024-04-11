@@ -13,10 +13,10 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
 - **For SFTP Transfers**:
   - SFTP server access with credentials or SSH keys for secure file transfer.
 - **For Azure Blob Storage Transfer**:
-  - An Azure Storage Account and access credentials, such as a SAS Token.\
+  - An Azure Storage Account and access credentials, such as a SAS Token.
 
 ## Current Version
-Version 2.0.0
+Version 2.1.0
 
 ## Features
 - **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
@@ -49,9 +49,9 @@ Set the following in the Lambda function code:
 
 - `DELETE_ORIGINAL` (bool): If `True`, original files are deleted after processing. Default is `True`.
   - Example: `DELETE_ORIGINAL = True`
-- `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`.
+- `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`, `"Dell ECS S3"`, `"SFTP"`,
   - Example: `DESTINATION = "Azure"`
-- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure only).
+- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure, Dell ECS S3 and SFTP only).
   - Example: `OUTPUT_FORMAT = "ndjson"`
 - `KEEP_ORIGINAL_FOLDER_STRUCTURE` (bool): Set to `False` to ignore original folder structure.
   - Example: `KEEP_ORIGINAL_FOLDER_STRUCTURE = False`
@@ -116,7 +116,7 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 
 1. Download the script from GitHub.
 2. Create a ZIP file with `lambda_function.py` at the root.
-3. Create an AWS Lambda function using Python 3.11.
+3. Create an AWS Lambda function using Python 3.12.
 4. Upload the ZIP file to the Lambda function.
 5. Set the function's handler to `lambda_function.lambda_handler`.
 6. Increase the Lambda function timeout to 5 minutes.
@@ -130,6 +130,9 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 2.1.0 - 11/04/2024
+- **Support for json.gz for Dell ECS and SFTP**: Added support to send logs in json.gz format with destination Dell ECS and SFTP.
+- **Added support for test txt file**: Added support to send the test txt file using the lambda to help with initial configuration and deployment testing.
 ### Version 2.0.0 - 10/04/2024
 - **Added Support for Dell ECS and SFTP**: Expanded the destination options to include Dell ECS S3-compatible storage and SFTP servers, allowing for a wider range of log transfer destinations.
 - **Log Enrichment Features**: Introduced log enrichment capabilities to ensure each log contains an `applicationName` and to add a `logType` to every log. This enhancement improves the quality and usability of the log data for analysis and integration with various services and SIEMs.

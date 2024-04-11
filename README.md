@@ -116,7 +116,7 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 
 1. Download the script from GitHub.
 2. Create a ZIP file with `lambda_function.py` at the root.
-3. Create an AWS Lambda function using Python 3.11.
+3. Create an AWS Lambda function using Python 3.12.
 4. Upload the ZIP file to the Lambda function.
 5. Set the function's handler to `lambda_function.lambda_handler`.
 6. Increase the Lambda function timeout to 5 minutes.
@@ -130,6 +130,9 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 2.1.0 - 11/04/2024
+- **Support for json.gz for Dell ECS and SFTP**: Added support to send logs in json.gz format with destination Dell ECS and SFTP.
+- **Added support for test txt file**: Added support to send the test txt file using the lambda to help with initial configuration and deployment testing.
 ### Version 2.0.0 - 10/04/2024
 - **Added Support for Dell ECS and SFTP**: Expanded the destination options to include Dell ECS S3-compatible storage and SFTP servers, allowing for a wider range of log transfer destinations.
 - **Log Enrichment Features**: Introduced log enrichment capabilities to ensure each log contains an `applicationName` and to add a `logType` to every log. This enhancement improves the quality and usability of the log data for analysis and integration with various services and SIEMs.

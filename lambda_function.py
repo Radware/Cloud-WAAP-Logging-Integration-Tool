@@ -76,6 +76,57 @@ SFTP_USERNAME = ''  # Username for SFTP authentication.
 SFTP_PASSWORD = ''  # Password for SFTP authentication (consider SSH key for security).
 SFTP_TARGET_DIR = ''  # Target directory on the SFTP server for file uploads.
 
+# ======================================================================
+# Log Filtering Options
+# ======================================================================
+ENABLE_FILTERING = True
+DISABLE_PER_APPLICATION = []
+OVERRIDE_APPLICATION_FILTER_CONFIG = {
+    # application name = {
+    #   ACCESS_LOGS = True,
+    #   ACCESS_LOGS_FILTER_ACTION = [],
+    #   ACCESS_LOGS_FILTER_SEVERITY = [],
+    #   WAF_LOGS = True
+    #   WAF_LOGS_FILTER_ACTION = []
+    #   WAF_LOGS_FILTER_SEVERITY = []
+    #   WAF_LOGS_FILTER_VIOLATION_TYPE = []
+    # }
+}
+# ---------------------------------------
+# Access Logs Options
+# ---------------------------------------
+ACCESS_LOGS = True
+ACCESS_LOGS_FILTER_ACTION = []
+ACCESS_LOGS_FILTER_SEVERITY = []
+# ---------------------------------------
+# WAF Logs Options
+# ---------------------------------------
+WAF_LOGS = True
+WAF_LOGS_FILTER_ACTION = []
+WAF_LOGS_FILTER_SEVERITY = []
+WAF_LOGS_FILTER_VIOLATION_TYPE = []
+
+# ---------------------------------------
+# Bot Logs Options
+# ---------------------------------------
+BOT_LOGS = True
+BOT_LOGS_FILTER_ACTION = []
+BOT_LOGS_FILTER_SEVERITY = []
+BOT_LOGS_FILTER_VIOLATION_TYPE = []
+# ---------------------------------------
+# DDoS Logs Options
+# ---------------------------------------
+DDOS_LOGS = True
+DDOS_LOGS_FILTER_ACTION = []
+DDOS_LOGS_FILTER_VIOLATION_TYPE = []
+# ---------------------------------------
+# WebDDoS Logs Options
+# ---------------------------------------
+WEB_DDOS_LOGS = True
+# ---------------------------------------
+# CSP Logs Options
+# ---------------------------------------
+WEB_DDOS_LOGS = True
 
 # Conditional import for paramiko
 if 'SFTP' in DESTINATION:
@@ -114,6 +165,8 @@ def enrich_log_data(logs, log_type, application_name, tenant_name):
     :param tenant_name: Name of the tenant.
     :return: The enriched log list.
     """
+    # TODO add option that if output is ndjson to format the ndjson here thus saving the need to loop through the array outside of this function
+
     for log in logs:
         log['logType'] = log_type
         if log_type == 'WebDDoS':
@@ -221,6 +274,7 @@ def lambda_handler(event, context):
                 data = enrich_log_data(data, log_type, application_name, tenant_name)
 
             if OUTPUT_FORMAT == "ndjson":
+                # TODO Add if regarding enrich feature and new filter option to not loop through the data here
                 transformed_content = '\n'.join(json.dumps(item) for item in data)
             elif OUTPUT_FORMAT == "json":  # Assuming "json"
                 transformed_content = json.dumps(data)

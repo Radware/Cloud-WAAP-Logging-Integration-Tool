@@ -16,9 +16,10 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
   - An Azure Storage Account and access credentials, such as a SAS Token.
 
 ## Current Version
-Version 2.1.0
+Version 2.2.0b
 
 ## Features
+- **Advanced Log Filtering**: Implement robust log filtering to exclude specific entries based on predefined criteria, enhancing operational efficiency and focusing on relevant data. Supports `json` and `ndjson` formats, ensuring flexibility in log processing.
 - **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
 - **Flexible Output Formatting**: Users can now specify `ndjson` as an output format, in addition to the previously supported `json` and `json.gz` formats.
 - **Enhanced Folder Structure Control**: Choose to either maintain the original folder hierarchy or restructure the output to a specified directory path.
@@ -111,6 +112,68 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 - `SFTP_TARGET_DIR` (str): Target directory on the SFTP server where files will be uploaded.
   - Example: `SFTP_TARGET_DIR = "/path/to/destination/directory"`
 
+### Log Filtering Configuration
+
+Configurations related to log filtering are specified below. These settings allow detailed control over which logs are processed based on the type of log and application-specific settings.
+
+- `ENABLE_FILTERING` (bool): Enables or disables log filtering based on configured rules. Default is `False`.
+  - Example: `ENABLE_FILTERING = True`
+- `DISABLE_PER_APPLICATION` (list): List of application names for which log filtering should be bypassed. Logs from these applications will not be filtered.
+  - Example: `DISABLE_PER_APPLICATION = ['testapp']`
+- `OVERRIDE_APPLICATION_FILTER_CONFIG` (dict): Provides application-specific log filtering configurations. This allows for overriding the global filtering settings for specific applications.
+  - **Example Configuration Explanation**:
+    ```python
+    OVERRIDE_APPLICATION_FILTER_CONFIG = {
+        "Example App One": {
+            "Access": {"enable": True, "action": []},
+            "WAF": {"enable": True, "action": [], "violationType": ['Geo-Blocking']},
+            "Bot": {"enable": True, "action": []},
+            "DDoS": {"enable": True},
+            "WebDDoS": {"enable": True},
+            "CSP": {"enable": True}
+        },
+        "Example App Two": {
+            "Access": {"enable": False, "action": []},
+            "WAF": {"enable": False, "action": [], "violationType": []},
+            "Bot": {"enable": False, "action": []},
+            "DDoS": {"enable": False},
+            "WebDDoS": {"enable": False},
+            "CSP": {"enable": False}
+        }
+    }
+    ```
+    - **Example App One**: In this configuration, all log types are enabled for processing. However, any WAF log that includes "Geo-Blocking" as a `violationType` will be specifically filtered out (dropped). This allows for the monitoring of various security events while excluding specific violation types that are not needed or are considered noise.
+    - **Example App Two**: For this application, all log types are disabled for processing. This means that no logs from "Example App Two" will be processed, effectively dropping all logs from this application regardless of their content. This could be used in scenarios where the logs from this application are not relevant or required for analysis.
+
+- `LOG_FILTERING` (dict): Defines global log filtering rules by log type. These settings are applied if there are no specific overrides for an application.
+  - **Example Configuration Explanation**:
+    ```python
+    LOG_FILTERING = {
+        "Access": {"enable": True, "action": []},
+        "WAF": {"enable": True, "action": [], "violationType": []},
+        "Bot": {"enable": True, "action": []},
+        "DDoS": {"enable": True},
+        "WebDDoS": {"enable": True},
+        "CSP": {"enable": True}
+    }
+    ```
+    - This configuration establishes default filtering settings for all log types across applications unless overridden by application-specific settings. Here's how each setting is intended to function:
+      - **Access Logs**: Enabled for filtering, meaning all Access logs will be processed unless specified otherwise in application-specific configurations.
+      - **WAF Logs**: Enabled for filtering without any specific action or violation type restrictions. This allows all WAF logs to be processed, suitable for scenarios where a broad overview of web application firewall events is required.
+      - **Bot Logs**: Enabled for filtering, which processes all Bot-related logs. This is crucial for analyzing bot traffic across applications unless exceptions are defined.
+      - **DDoS Logs**: Filtering is enabled, allowing all logs related to Distributed Denial of Service attacks to be processed, vital for maintaining security and operational integrity.
+      - **WebDDoS Logs**: Also enabled for filtering, these logs pertain specifically to web-layer DDoS events, critical for web service protection analyses.
+      - **CSP Logs**: Enabled for filtering, ensuring that Content Security Policy violation logs are reviewed, which helps in securing applications against common XSS and data injection attacks.
+
+    - By setting these global rules, the system ensures that unless explicitly stated in the application-specific overrides, logs of these types from all applications will be processed according to the defined rules. This approach provides a baseline of log analysis, ensuring comprehensive monitoring while allowing flexibility for application-specific customization.
+
+
+### Important Note on Output Formats
+
+- Log filtering is currently supported only for output formats `json` and `ndjson`. The `json.gz` format is not supported for log filtering due to its compression, which complicates the direct manipulation and analysis of individual log entries within the file. Ensure your output format is set appropriately when enabling log filtering.
+  - Supported: `OUTPUT_FORMAT = "json"` or `OUTPUT_FORMAT = "ndjson"`
+  - Not supported: `OUTPUT_FORMAT = "json.gz"`
+
 
 ## Deployment & Setup
 
@@ -130,6 +193,8 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 2.2.0b - 21/04/2024
+- **Enhanced Log Management**: Introduced comprehensive log filtering capabilities, both global and application-specific. This update allows for targeted log processing, enhancing security and operational efficiency by excluding irrelevant or sensitive log data based on configurable rules.
 ### Version 2.1.0 - 11/04/2024
 - **Support for json.gz for Dell ECS and SFTP**: Added support to send logs in json.gz format with destination Dell ECS and SFTP.
 - **Added support for test txt file**: Added support to send the test txt file using the lambda to help with initial configuration and deployment testing.

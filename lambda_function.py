@@ -12,7 +12,7 @@ from cloudwaap_log_utils import CloudWAAPProcessor
 s3_client = boto3.client('s3')
 
 # Radware Cloud WAAP Logging Integration Tool
-# Lambda function - Version 2.1.0
+# Lambda function - Version 2.2.0b
 
 # ======================================================================
 # General Script Options
@@ -76,6 +76,62 @@ SFTP_USERNAME = ''  # Username for SFTP authentication.
 SFTP_PASSWORD = ''  # Password for SFTP authentication (consider SSH key for security).
 SFTP_TARGET_DIR = ''  # Target directory on the SFTP server for file uploads.
 
+# ======================================================================
+# Log Filtering Options
+# ======================================================================
+ENABLE_FILTERING = True
+DISABLE_PER_APPLICATION = []
+OVERRIDE_APPLICATION_FILTER_CONFIG = {
+    # "example":{
+    #     "Access":{
+    #         "enable": True,
+    #         "action": []
+    #     },
+    #     "WAF":{
+    #         "enable": True,
+    #         "action": [],
+    #         "violationType": []
+    #     },
+    #     "Bot":{
+    #         "enable": True,
+    #         "action": []
+    #     },
+    #     "DDoS":{
+    #         "enable": True
+    #     },
+    #     "WebDDoS":{
+    #         "enable": True
+    #     },
+    #     "CSP":{
+    #         "enable": True
+    #     }
+    # }
+}
+LOG_FILTERING = {
+    "Access": {
+        "enable": True,
+        "action": []
+    },
+    "WAF": {
+        "enable": True,
+        "action": [],
+        "violationType": []
+    },
+    "Bot": {
+        "enable": True,
+        "action": []
+    },
+    "DDoS": {
+        "enable": True
+    },
+    "WebDDoS": {
+        "enable": True
+    },
+    "CSP": {
+        "enable": True
+    }
+}
+
 
 # Conditional import for paramiko
 if 'SFTP' in DESTINATION:
@@ -104,24 +160,86 @@ elif DESTINATION == "Dell ECS S3":
     )
 
 
-def enrich_log_data(logs, log_type, application_name, tenant_name):
+def filter_log_entry(log, application_name, log_type):
     """
-    Enrich each log entry with tenantName, logType, and applicationName.
+    Determine if a log entry should be kept based on filtering configurations.
+    Logs with specified field values will be omitted.
 
-    :param logs: List of log dictionaries.
-    :param log_type: The type of the log.
-    :param application_name: Name of the application.
-    :param tenant_name: Name of the tenant.
-    :return: The enriched log list.
+    Parameters:
+        log (dict): The log entry as a dictionary.
+        application_name (str): The application name to which the log belongs.
+        log_type (str): The type of the log (e.g., Access, WAF, DDoS).
+
+    Returns:
+        bool: True if the log should be kept, False if it should be filtered out.
     """
+    # Retrieve the applicable configuration, checking for overrides first
+    app_config = OVERRIDE_APPLICATION_FILTER_CONFIG.get(application_name, {})
+    log_config = app_config.get(log_type, LOG_FILTERING.get(log_type, {}))
+
+    # If filtering is disabled for this log type, keep the log
+    if not log_config.get("enable", True):
+        return False
+
+    # Check specific fields like 'action' and 'violationType' if they are specified
+    # Logs with these values in the fields are omitted.
+    if "action" in log_config and log_config["action"] and log.get("action") in log_config["action"]:
+        return False  # Filter out this log because its action matches one of the specified actions to omit
+
+    if "violationType" in log_config and log_config["violationType"] and log.get("violationType") in log_config["violationType"]:
+        return False  # Filter out this log because its violationType matches one of the specified types to omit
+
+    # Log does not match the omitted conditions and passes all filters
+    return True
+
+
+
+def enrich_and_filter_logs(logs, log_type, application_name, tenant_name, enable_enrichment, enable_filtering):
+    """
+    Enrich and/or filter each log entry based on specified criteria and configuration flags.
+
+    Parameters:
+        logs (list): List of log dictionaries.
+        log_type (str): The type of the log.
+        application_name (str): Name of the application.
+        tenant_name (str): Name of the tenant.
+        enable_enrichment (bool): Flag to indicate whether enrichment is enabled.
+        enable_filtering (bool): Flag to indicate whether filtering is enabled.
+
+    Returns:
+        list: The list of processed log entries, enriched and/or filtered as configured.
+    """
+    processed_logs = []
     for log in logs:
-        log['logType'] = log_type
-        if log_type == 'WebDDoS':
-            if 'applicationName' not in log:
-                log['applicationName'] = application_name
-        if log_type != "Access" and 'tenantName' not in log:
-            log['tenantName'] = tenant_name
-    return logs
+        # Filter log entries if filtering is enabled
+        if enable_filtering and not filter_log_entry(log, application_name, log_type):
+            continue
+
+        # Apply enrichment if enabled
+        if enable_enrichment:
+            log['logType'] = log_type
+            if log_type == 'WebDDoS':
+                if 'applicationName' not in log:
+                    log['applicationName'] = application_name
+            if log_type != "Access" and 'tenantName' not in log:
+                log['tenantName'] = tenant_name
+        processed_logs.append(log)
+    return processed_logs
+
+
+def should_process_log_type(application_name, log_type):
+    """ Determine whether a log file should be processed based on its log type and application-specific rules. """
+    app_config = OVERRIDE_APPLICATION_FILTER_CONFIG.get(application_name, LOG_FILTERING)
+    log_config = app_config.get(log_type, {})
+    return log_config.get("enable", True)
+
+
+def clean_up_and_exit(bucket, key, path):
+    """ Clean up temporary files and optionally delete the original S3 file. """
+    if DELETE_ORIGINAL:
+        s3_client.delete_object(Bucket=bucket, Key=key)
+    os.remove(path)
+    print(f"Cleaned up local and S3 storage for {key}.")
 
 
 def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
@@ -144,14 +262,13 @@ def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
                     sftp.mkdir(current_dir)  # Create if it does not exist
 
     # Once the directory is confirmed to exist or if not keeping the original structure, upload the file
-    target_path = os.path.join(target_dir, os.path.basename(file_path)) if keep_original_folder_structure else target_dir
+    target_path = os.path.join(target_dir,
+                               os.path.basename(file_path)) if keep_original_folder_structure else target_dir
     sftp.put(file_path, target_path)
 
     sftp.close()
     transport.close()
     print(f"File {file_path} uploaded to SFTP at {target_path}.")
-
-
 
 
 def lambda_handler(event, context):
@@ -212,18 +329,43 @@ def lambda_handler(event, context):
             with gzip.open(download_path, 'rt') as f:
                 data = json.load(f)
 
-            if ENRICH_LOGS:
+            if ENRICH_LOGS or ENABLE_FILTERING:
                 log_type = CloudWAAPProcessor.identify_log_type(key)
-                application_name = CloudWAAPProcessor.parse_application_name(key)
-                tenant_name = CloudWAAPProcessor.parse_tenant_name(key)
 
-                # Enrich the log data
-                data = enrich_log_data(data, log_type, application_name, tenant_name)
+                if log_type == "Access":
+                    tenant_name, application_name = CloudWAAPProcessor.parse_names_from_log_data(data)
+                else:
+                    application_name = CloudWAAPProcessor.parse_application_name(key)
+                    tenant_name = CloudWAAPProcessor.parse_tenant_name(key)
 
+                # Filtering based on log type and application name
+                if application_name not in DISABLE_PER_APPLICATION and not should_process_log_type(application_name,
+                                                                                                   log_type):
+                    print(
+                        f"Skipping file processing based on log type '{log_type}' for application '{application_name}'.")
+                    clean_up_and_exit(bucket, key, download_path)
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps('File skipped based on filtering criteria.')
+                    }
+
+                # Call the function with appropriate flags
+                processed_data = enrich_and_filter_logs(
+                    data,
+                    log_type,
+                    application_name,
+                    tenant_name,
+                    enable_enrichment=ENRICH_LOGS,
+                    enable_filtering=ENABLE_FILTERING
+                )
+            else:
+                processed_data = data
+
+            # Continue processing with transformed_content
             if OUTPUT_FORMAT == "ndjson":
-                transformed_content = '\n'.join(json.dumps(item) for item in data)
-            elif OUTPUT_FORMAT == "json":  # Assuming "json"
-                transformed_content = json.dumps(data)
+                transformed_content = '\n'.join(json.dumps(item) for item in processed_data)
+            elif OUTPUT_FORMAT == "json":
+                transformed_content = json.dumps(processed_data)
 
             # Write to a new file
             output_path = '/tmp/{}'.format(key.split('/')[-1])
@@ -236,7 +378,8 @@ def lambda_handler(event, context):
                 'statusCode': 500,
                 'body': json.dumps('Failed during file transformation.')
             }
-    elif OUTPUT_FORMAT == "json.gz" or file_extension == ".txt" and DESTINATION in ['External S3', 'Dell ECS S3', 'SFTP']:
+    elif OUTPUT_FORMAT == "json.gz" or file_extension == ".txt" and DESTINATION in ['External S3', 'Dell ECS S3',
+                                                                                    'SFTP']:
         output_path = download_path  # Directly use the downloaded file for upload
     print(f"Transformation to {OUTPUT_FORMAT} done.")
 
@@ -276,7 +419,7 @@ def lambda_handler(event, context):
                 # If not keeping the original folder structure, use only the filename with the external prefix
                 filename = key.split('/')[-1]
                 destination_key = f"{EXTERNAL_PREFIX}{filename}".replace('.json.gz',
-                                                                    output_extension) if OUTPUT_FORMAT != "json.gz" else f"{EXTERNAL_PREFIX}{filename}"
+                                                                         output_extension) if OUTPUT_FORMAT != "json.gz" else f"{EXTERNAL_PREFIX}{filename}"
 
             # Check if the destination_key starts with a '/', remove it if true
             if destination_key.startswith('/'):
@@ -355,8 +498,8 @@ def lambda_handler(event, context):
         response = http.request('PUT', url, body=upload_content, headers=headers)
 
         if response.status != 201:
-            raise Exception(f"Failed to upload blob. Status: {response.status}, Reason: {response.data.decode('utf-8')}")
-
+            raise Exception(
+                f"Failed to upload blob. Status: {response.status}, Reason: {response.data.decode('utf-8')}")
 
     # Optionally delete the original file
     if DELETE_ORIGINAL:
@@ -368,7 +511,6 @@ def lambda_handler(event, context):
         print(f"Downloaded file {download_path} deleted.")
     except Exception as e:
         print(f"Warning: Could not delete the downloaded file: {e}")
-
 
     print("Lambda execution completed.")
 

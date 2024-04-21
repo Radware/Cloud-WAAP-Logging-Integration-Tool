@@ -114,3 +114,24 @@ class CloudWAAPProcessor:
         except Exception as e:
             print(f"Error parsing application name from key '{key}': {e}")
             return None
+
+    @staticmethod
+    def parse_names_from_log_data(log_data):
+        """
+        Extracts both the tenant name and application name from the first entry in the log data.
+
+        Args:
+            log_data (list of dict): The log data loaded, usually a list of dictionaries.
+
+        Returns:
+            tuple: The extracted tenant name and application name. Each will be an empty string
+                   if not found or if an error occurs.
+        """
+        try:
+            if log_data and len(log_data) > 0:
+                tenant_name = log_data[0].get('tenant_name', '')
+                application_name = log_data[0].get('application_name', '')
+                return (tenant_name, application_name)
+        except Exception as e:
+            print(f"Error parsing names from log data: {e}")
+        return ("", "")

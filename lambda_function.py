@@ -155,26 +155,35 @@ elif DESTINATION == "Dell ECS S3":
     )
 
 
-def enrich_log_data(logs, log_type, application_name, tenant_name):
+def enrich_log_data(logs, log_type, application_name, tenant_name, output_format):
     """
     Enrich each log entry with tenantName, logType, and applicationName.
+    Optionally, format each log entry as NDJSON if output_format is 'ndjson'.
 
     :param logs: List of log dictionaries.
     :param log_type: The type of the log.
     :param application_name: Name of the application.
     :param tenant_name: Name of the tenant.
-    :return: The enriched log list.
+    :param output_format: The desired output format of the logs.
+    :return: The enriched log list or a single string if NDJSON format is used.
     """
-    # TODO add option that if output is ndjson to format the ndjson here thus saving the need to loop through the array outside of this function
-
+    enriched_logs = []
     for log in logs:
         log['logType'] = log_type
-        if log_type == 'WebDDoS':
-            if 'applicationName' not in log:
-                log['applicationName'] = application_name
+        if log_type == 'WebDDoS' and 'applicationName' not in log:
+            log['applicationName'] = application_name
         if log_type != "Access" and 'tenantName' not in log:
             log['tenantName'] = tenant_name
-    return logs
+
+        if output_format == 'ndjson':
+            enriched_logs.append(json.dumps(log))
+        else:
+            enriched_logs.append(log)
+
+    if output_format == 'ndjson':
+        return '\n'.join(enriched_logs)
+    return enriched_logs
+
 
 
 def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
@@ -270,14 +279,16 @@ def lambda_handler(event, context):
                 application_name = CloudWAAPProcessor.parse_application_name(key)
                 tenant_name = CloudWAAPProcessor.parse_tenant_name(key)
 
-                # Enrich the log data
-                data = enrich_log_data(data, log_type, application_name, tenant_name)
+                # Enrich and potentially transform the log data to NDJSON in one step
+                data = enrich_log_data(data, log_type, application_name, tenant_name, OUTPUT_FORMAT)
 
-            if OUTPUT_FORMAT == "ndjson":
-                # TODO Add if regarding enrich feature and new filter option to not loop through the data here
+            if OUTPUT_FORMAT == "ndjson" and not ENRICH_LOGS:
+                # Transform to NDJSON only if not already done during enrichment
                 transformed_content = '\n'.join(json.dumps(item) for item in data)
             elif OUTPUT_FORMAT == "json":  # Assuming "json"
                 transformed_content = json.dumps(data)
+            else:
+                transformed_content = data
 
             # Write to a new file
             output_path = '/tmp/{}'.format(key.split('/')[-1])

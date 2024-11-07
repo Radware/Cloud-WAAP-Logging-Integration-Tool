@@ -16,7 +16,7 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
   - An Azure Storage Account and access credentials, such as a SAS Token.
 
 ## Current Version
-Version 2.1.0
+Version 2.1.1
 
 ## Features
 - **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
@@ -100,16 +100,24 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
   - Example: `SAS_TOKEN = "?sv=...[token]..."`
 
 ### SFTP Destination Options
+
 - `SFTP_SERVER` (str): Hostname or IP address of the SFTP server.
   - Example: `SFTP_SERVER = "sftp.example.com"`
 - `SFTP_PORT` (int): Port number used for the SFTP connection. Typically, this is port 22.
   - Example: `SFTP_PORT = 22`
 - `SFTP_USERNAME` (str): Username for SFTP authentication.
   - Example: `SFTP_USERNAME = "myusername"`
-- `SFTP_PASSWORD` (str): Password for SFTP authentication. It's recommended to use SSH keys for authentication if possible for enhanced security.
-  - Example: `SFTP_PASSWORD = "mypassword"`  # Consider using an SSH key instead
+- `SFTP_PASSWORD` (str): Password for SFTP authentication. Use this if not using SSH key-based authentication. For enhanced security, it is recommended to use SSH keys.
+  - Example: `SFTP_PASSWORD = "mypassword"`
+- `SFTP_USE_KEY_AUTH` (bool): Set to `True` to enable authentication with an SSH private key, otherwise set to `False` to use password authentication.
+  - Example: `SFTP_USE_KEY_AUTH = True`
+- `SFTP_PRIVATE_KEY_ENV_VAR` (str): Name of the environment variable that contains the private SSH key. The private key should be in PEM format.
+  - Example: `SFTP_PRIVATE_KEY_ENV_VAR = "SFTP_PRIVATE_KEY"`
 - `SFTP_TARGET_DIR` (str): Target directory on the SFTP server where files will be uploaded.
   - Example: `SFTP_TARGET_DIR = "/path/to/destination/directory"`
+
+**Note**: When using key-based authentication (`SFTP_USE_KEY_AUTH = True`), the private key must be stored in the Lambda environment variable specified by `SFTP_PRIVATE_KEY_ENV_VAR`.
+
 
 
 ## Deployment & Setup
@@ -130,6 +138,9 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 2.1.1 - 07/11/2024
+- Added support for SFTP authentication using SSH private keys, enabling secure file transfers without needing a password.
+- Updated `upload_to_sftp` function to conditionally use either password or key-based authentication based on configuration.
 ### Version 2.1.0 - 11/04/2024
 - **Support for json.gz for Dell ECS and SFTP**: Added support to send logs in json.gz format with destination Dell ECS and SFTP.
 - **Added support for test txt file**: Added support to send the test txt file using the lambda to help with initial configuration and deployment testing.

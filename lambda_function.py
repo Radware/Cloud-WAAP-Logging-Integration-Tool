@@ -12,7 +12,7 @@ from cloudwaap_log_utils import CloudWAAPProcessor
 s3_client = boto3.client('s3')
 
 # Radware Cloud WAAP Logging Integration Tool
-# Lambda function - Version 2.1.0
+# Lambda function - Version 2.1.1
 
 # ======================================================================
 # General Script Options
@@ -74,6 +74,8 @@ SFTP_SERVER = ''  # Hostname or IP of the SFTP server.
 SFTP_PORT = 22  # Port number for the SFTP server.
 SFTP_USERNAME = ''  # Username for SFTP authentication.
 SFTP_PASSWORD = ''  # Password for SFTP authentication (consider SSH key for security).
+SFTP_USE_KEY_AUTH = False  # Set to True to enable private key authentication.
+SFTP_PRIVATE_KEY_ENV_VAR = 'SFTP_PRIVATE_KEY'  # Environment variable name holding the private key.
 SFTP_TARGET_DIR = ''  # Target directory on the SFTP server for file uploads.
 
 
@@ -125,8 +127,24 @@ def enrich_log_data(logs, log_type, application_name, tenant_name):
 
 
 def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
+    # Initialize the transport connection
     transport = paramiko.Transport((SFTP_SERVER, SFTP_PORT))
-    transport.connect(username=SFTP_USERNAME, password=SFTP_PASSWORD)  # Consider key-based authentication
+
+    # Use key-based or password-based authentication based on configuration
+    if SFTP_USE_KEY_AUTH:
+        # Load the private key from the specified environment variable if key auth is enabled
+        private_key_data = os.getenv(SFTP_PRIVATE_KEY_ENV_VAR)
+        if private_key_data:
+            private_key = paramiko.RSAKey.from_private_key(io.StringIO(private_key_data))
+            # Connect with the username and private key
+            transport.connect(username=SFTP_USERNAME, pkey=private_key)
+        else:
+            raise ValueError(f"Private key data not found in environment variable '{SFTP_PRIVATE_KEY_ENV_VAR}'")
+    else:
+        # Fall back to password authentication if key auth is not enabled
+        transport.connect(username=SFTP_USERNAME, password=SFTP_PASSWORD)
+
+    # Set up the SFTP client
     sftp = paramiko.SFTPClient.from_transport(transport)
 
     if keep_original_folder_structure:
@@ -135,21 +153,24 @@ def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
             sftp.chdir(target_dir)  # Test if target_dir exists
         except IOError:
             # Create directory structure if it does not exist
-            current_dir = ''
+            current_dir = '/'
             for dir in target_dir.split('/'):
-                current_dir = os.path.join(current_dir, dir)
-                try:
-                    sftp.chdir(current_dir)  # Test if this part of the dir exists
-                except IOError:
-                    sftp.mkdir(current_dir)  # Create if it does not exist
+                if dir:  # Skip any empty strings resulting from split
+                    current_dir = os.path.join(current_dir, dir)
+                    try:
+                        sftp.chdir(current_dir)  # Test if this part of the dir exists
+                    except IOError:
+                        sftp.mkdir(current_dir)  # Create if it does not exist
 
     # Once the directory is confirmed to exist or if not keeping the original structure, upload the file
     target_path = os.path.join(target_dir, os.path.basename(file_path)) if keep_original_folder_structure else target_dir
     sftp.put(file_path, target_path)
 
+    # Close the SFTP client and transport connection
     sftp.close()
     transport.close()
     print(f"File {file_path} uploaded to SFTP at {target_path}.")
+
 
 
 

@@ -7,6 +7,7 @@ import urllib3
 import certifi
 import os
 import shutil
+import io
 from cloudwaap_log_utils import CloudWAAPProcessor
 
 s3_client = boto3.client('s3')

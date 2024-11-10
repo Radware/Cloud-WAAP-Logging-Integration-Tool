@@ -138,7 +138,7 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
-### Version 2.1.1 - 07/11/2024
+### Version 2.1.1 - 10/11/2024
 - Added support for SFTP authentication using SSH private keys, enabling secure file transfers without needing a password.
 - Updated `upload_to_sftp` function to conditionally use either password or key-based authentication based on configuration.
 ### Version 2.1.0 - 11/04/2024

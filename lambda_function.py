@@ -7,12 +7,14 @@ import urllib3
 import certifi
 import os
 import shutil
+import io
+import re
 from cloudwaap_log_utils import CloudWAAPProcessor
 
 s3_client = boto3.client('s3')
 
 # Radware Cloud WAAP Logging Integration Tool
-# Lambda function - Version 2.1.0
+# Lambda function - Version 2.1.1
 
 # ======================================================================
 # General Script Options
@@ -74,8 +76,9 @@ SFTP_SERVER = ''  # Hostname or IP of the SFTP server.
 SFTP_PORT = 22  # Port number for the SFTP server.
 SFTP_USERNAME = ''  # Username for SFTP authentication.
 SFTP_PASSWORD = ''  # Password for SFTP authentication (consider SSH key for security).
+SFTP_USE_KEY_AUTH = False  # Set to True to enable private key authentication.
+SFTP_PRIVATE_KEY_ENV_VAR = 'SFTP_PRIVATE_KEY'  # Environment variable name holding the private key.
 SFTP_TARGET_DIR = ''  # Target directory on the SFTP server for file uploads.
-
 
 # Conditional import for paramiko
 if 'SFTP' in DESTINATION:
@@ -124,9 +127,53 @@ def enrich_log_data(logs, log_type, application_name, tenant_name):
     return logs
 
 
+def load_private_key():
+    # Retrieve the key from the environment variable
+    private_key_data = os.getenv(SFTP_PRIVATE_KEY_ENV_VAR)
+
+    if private_key_data:
+        # Remove any leading/trailing whitespace from the environment variable
+        private_key_data = private_key_data.strip()
+
+        # Check for and remove any existing headers/footers to avoid duplication
+        private_key_data = re.sub(r"-----BEGIN RSA PRIVATE KEY-----", "", private_key_data)
+        private_key_data = re.sub(r"-----END RSA PRIVATE KEY-----", "", private_key_data)
+
+        # Replace any escaped newline sequences (`\\n`) with actual newlines
+        private_key_data = private_key_data.replace("\\n", "\n")
+
+        # Remove any spaces and newlines from the key body to clean it up
+        private_key_data = private_key_data.replace(" ", "").replace("\n", "")
+
+        # Rebuild the key with 64-character line breaks, then add the headers and footers
+        header = "-----BEGIN RSA PRIVATE KEY-----"
+        footer = "-----END RSA PRIVATE KEY-----"
+        key_body = "\n".join([private_key_data[i:i + 64] for i in range(0, len(private_key_data), 64)])
+
+        # Construct the final formatted key
+        formatted_key = f"{header}\n{key_body}\n{footer}"
+
+        return io.StringIO(formatted_key)
+    else:
+        raise ValueError(f"Private key data not found in environment variable '{SFTP_PRIVATE_KEY_ENV_VAR}'")
+
+
 def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
     transport = paramiko.Transport((SFTP_SERVER, SFTP_PORT))
-    transport.connect(username=SFTP_USERNAME, password=SFTP_PASSWORD)  # Consider key-based authentication
+
+    # Use key-based or password-based authentication based on configuration
+    if SFTP_USE_KEY_AUTH:
+        try:
+            private_key_stream = load_private_key()
+            private_key = paramiko.RSAKey.from_private_key(private_key_stream)
+            transport.connect(username=SFTP_USERNAME, pkey=private_key)
+        except paramiko.SSHException as e:
+            print("Failed to load private key:", e)
+            raise
+    else:
+        transport.connect(username=SFTP_USERNAME, password=SFTP_PASSWORD)
+
+    # Set up the SFTP client
     sftp = paramiko.SFTPClient.from_transport(transport)
 
     if keep_original_folder_structure:
@@ -135,23 +182,24 @@ def upload_to_sftp(file_path, target_dir, keep_original_folder_structure=True):
             sftp.chdir(target_dir)  # Test if target_dir exists
         except IOError:
             # Create directory structure if it does not exist
-            current_dir = ''
+            current_dir = '/'
             for dir in target_dir.split('/'):
-                current_dir = os.path.join(current_dir, dir)
-                try:
-                    sftp.chdir(current_dir)  # Test if this part of the dir exists
-                except IOError:
-                    sftp.mkdir(current_dir)  # Create if it does not exist
+                if dir:  # Skip any empty strings resulting from split
+                    current_dir = os.path.join(current_dir, dir)
+                    try:
+                        sftp.chdir(current_dir)  # Test if this part of the dir exists
+                    except IOError:
+                        sftp.mkdir(current_dir)  # Create if it does not exist
 
     # Once the directory is confirmed to exist or if not keeping the original structure, upload the file
-    target_path = os.path.join(target_dir, os.path.basename(file_path)) if keep_original_folder_structure else target_dir
+    target_path = os.path.join(target_dir,
+                               os.path.basename(file_path)) if keep_original_folder_structure else target_dir
     sftp.put(file_path, target_path)
 
+    # Close the SFTP client and transport connection
     sftp.close()
     transport.close()
     print(f"File {file_path} uploaded to SFTP at {target_path}.")
-
-
 
 
 def lambda_handler(event, context):
@@ -236,7 +284,8 @@ def lambda_handler(event, context):
                 'statusCode': 500,
                 'body': json.dumps('Failed during file transformation.')
             }
-    elif OUTPUT_FORMAT == "json.gz" or file_extension == ".txt" and DESTINATION in ['External S3', 'Dell ECS S3', 'SFTP']:
+    elif OUTPUT_FORMAT == "json.gz" or file_extension == ".txt" and DESTINATION in ['External S3', 'Dell ECS S3',
+                                                                                    'SFTP']:
         output_path = download_path  # Directly use the downloaded file for upload
     print(f"Transformation to {OUTPUT_FORMAT} done.")
 
@@ -276,7 +325,7 @@ def lambda_handler(event, context):
                 # If not keeping the original folder structure, use only the filename with the external prefix
                 filename = key.split('/')[-1]
                 destination_key = f"{EXTERNAL_PREFIX}{filename}".replace('.json.gz',
-                                                                    output_extension) if OUTPUT_FORMAT != "json.gz" else f"{EXTERNAL_PREFIX}{filename}"
+                                                                         output_extension) if OUTPUT_FORMAT != "json.gz" else f"{EXTERNAL_PREFIX}{filename}"
 
             # Check if the destination_key starts with a '/', remove it if true
             if destination_key.startswith('/'):
@@ -355,8 +404,8 @@ def lambda_handler(event, context):
         response = http.request('PUT', url, body=upload_content, headers=headers)
 
         if response.status != 201:
-            raise Exception(f"Failed to upload blob. Status: {response.status}, Reason: {response.data.decode('utf-8')}")
-
+            raise Exception(
+                f"Failed to upload blob. Status: {response.status}, Reason: {response.data.decode('utf-8')}")
 
     # Optionally delete the original file
     if DELETE_ORIGINAL:
@@ -368,7 +417,6 @@ def lambda_handler(event, context):
         print(f"Downloaded file {download_path} deleted.")
     except Exception as e:
         print(f"Warning: Could not delete the downloaded file: {e}")
-
 
     print("Lambda execution completed.")
 

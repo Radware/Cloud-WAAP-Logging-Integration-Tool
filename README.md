@@ -10,13 +10,14 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
 - **Labmda Runtime**: Support Lambda Python runtime version 3.8 up to 3.12.
 - **Radware Cloud WAAP**: Configuration in place to send logs to an AWS S3 bucket.
 - **Permissions**: Proper IAM roles and policies that allow the Lambda function to read from S3 buckets and write to the desired destinations.
+- **Lambda Layer**: Required `lambda_layer.zip` containing paramiko and pyAesCrypt libraries for SFTP and encryption support.
 - **For SFTP Transfers**:
   - SFTP server access with credentials or SSH keys for secure file transfer.
 - **For Azure Blob Storage Transfer**:
   - An Azure Storage Account and access credentials, such as a SAS Token.
 
 ## Current Version
-Version 2.1.1
+Version 2.1.2
 
 ## Features
 - **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
@@ -25,6 +26,7 @@ Version 2.1.1
 - **Suffix Management**: Customize folder names by appending or removing specified suffixes, providing better organization of processed files.
 - **Security and Compliance**: Ensure that logs are transferred securely, maintaining compliance with organizational security policies.
 - **Automated Post-Processing Cleanup**: Option to delete original files after successful processing to keep your storage organized and cost-efficient.
+- **Optional Encryption**: Enable AES encryption for files before uploading to any destination.
 
 ## Operational Sequence
 The tool operates in the following sequence:
@@ -68,6 +70,16 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
   - Example: `NEW_SUFFIX = "processed"`
 - `INTERNAL_DESTINATION_BUCKET` (str or None): The S3 bucket where the transformed file will be uploaded if `DESTINATION` is `"Internal S3"`. If `None`, defaults to the source bucket.
   - Example: `INTERNAL_DESTINATION_BUCKET = "my-internal-bucket"`
+
+### Encryption Options
+- `ENCRYPT_OUTPUT` (bool): Enable encryption for files before uploading to any destination. 
+  - Example: `ENCRYPT_OUTPUT = True`
+- `ENCRYPTION_PASSWORD_ENV_VAR` (str): Name of the Lambda environment variable containing the encryption password.
+  - Example: `ENCRYPTION_PASSWORD_ENV_VAR = "ENCRYPTION_PASSWORD"`
+- `ENCRYPTION_BUFFER_SIZE` (int): Buffer size for encryption operations (in bytes).
+  - Example: `ENCRYPTION_BUFFER_SIZE = 64 * 1024`  # 64KB buffer
+- `ENCRYPTED_FILE_SUFFIX` (str): Suffix added to encrypted files.
+  - Example: `ENCRYPTED_FILE_SUFFIX = ".aes"`
 
 ### External S3 Options
 
@@ -122,14 +134,20 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 
 ## Deployment & Setup
 
-1. Download the script from GitHub.
+1. Download the script and Lambda layer from GitHub.
 2. Create a ZIP file with `lambda_function.py` at the root.
 3. Create an AWS Lambda function using Python 3.12.
 4. Upload the ZIP file to the Lambda function.
-5. Set the function's handler to `lambda_function.lambda_handler`.
-6. Increase the Lambda function timeout to 5 minutes.
-7. Set the Lambda function memory to at least 256 MB.
-8. Set up an S3 event trigger for new `.json.gz` file uploads.
+5. Add the `lambda_layer.zip` as a Lambda layer:
+   - Go to Lambda > Layers > Create layer
+   - Upload `lambda_layer.zip`
+   - Select compatible runtimes (Python 3.8-3.12)
+   - Attach the layer to your Lambda function
+6. Set the function's handler to `lambda_function.lambda_handler`.
+7. Increase the Lambda function timeout to 5 minutes.
+8. Set the Lambda function memory to at least 256 MB.
+9. Set up an S3 event trigger for new `.json.gz` file uploads.
+10. If using encryption, set the `ENCRYPTION_PASSWORD` environment variable.
 
 ## Usage
 
@@ -138,6 +156,10 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Changelog
 
+### Version 2.1.2 - 15/11/2024
+- Added optional encryption feature with AES encryption support for all destinations.
+- Updated Lambda layer to include pyAesCrypt library alongside paramiko.
+- Unified the Lambda layer requirement into a single `lambda_layer.zip`.
 ### Version 2.1.1 - 10/11/2024
 - Added support for SFTP authentication using SSH private keys, enabling secure file transfers without needing a password.
 - Updated `upload_to_sftp` function to conditionally use either password or key-based authentication based on configuration.
@@ -167,31 +189,25 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 
 ## Additional Notes for SFTP Transfers
 
-For the Lambda function to support SFTP transfers, it must utilize the `paramiko` library, which is not included by default in the AWS Lambda Python runtime. To facilitate this, a Lambda layer containing the `paramiko` library and its dependencies is required.
+The Lambda layer (`lambda_layer.zip`) now includes both paramiko for SFTP transfers and pyAesCrypt for encryption support. This layer is required for:
+- SFTP file transfers using paramiko
+- File encryption using pyAesCrypt (when `ENCRYPT_OUTPUT = True`)
 
-### Adding the Paramiko Layer
+### Adding the Lambda Layer
 
-1. **Download the Paramiko Layer**:
-   - The `paramiko-layer.zip` is available for download from the GitHub release page of the Cloud WAAP Logging Integration Tool, Version 2.0.
-   - Navigate to the [Releases](https://github.com/Radware/Cloud-WAAP-Logging-Integration-Tool/releases) section of the project repository and download the `paramiko-layer.zip` file associated with the 2.0 release.
+1. **Download the Lambda Layer**:
+   - The `lambda_layer.zip` is available for download from the GitHub release page.
+   - Navigate to the [Releases](https://github.com/Radware/Cloud-WAAP-Logging-Integration-Tool/releases) section and download the latest `lambda_layer.zip`.
 
 2. **Upload the Layer to AWS Lambda**:
    - In the AWS Lambda Console, go to the Layers section and click on "Create layer".
-   - Upload the downloaded `paramiko-layer.zip` file.
-   - Specify the compatible runtimes as Python 3.8, 3.9, 3.10, 3.11, and 3.12 to ensure compatibility across different Lambda function configurations.
+   - Upload the downloaded `lambda_layer.zip` file.
+   - Specify the compatible runtimes as Python 3.8, 3.9, 3.10, 3.11, and 3.12.
 
 3. **Attach the Layer to Your Lambda Function**:
-   - Open the configuration for your Lambda function in the AWS Lambda Console.
-   - Under the "Layers" section, choose "Add a layer" and select the uploaded `paramiko-layer` from your layers list.
-   - Save the changes to ensure the layer is applied to your function.
-
-This setup is crucial for the Lambda function to facilitate secure SFTP file transfers, making it possible to use the SFTP destination option within the Cloud WAAP Logging Integration Tool.
-
-## Troubleshooting
-
-- **Issue**: Lambda function fails to initiate SFTP transfers.
-  - **Solution**: Ensure the `paramiko-layer` has been correctly added to your Lambda function. Check that the layer’s Python runtime version is compatible with your Lambda function's runtime. Also, verify the `paramiko-layer.zip` has been downloaded from the correct release and added as a layer in your Lambda configuration.
-
+   - Open your Lambda function configuration.
+   - Under "Layers", choose "Add a layer" and select the uploaded layer.
+   - Save the changes to apply the layer.
 
 ## Troubleshooting
 
@@ -220,3 +236,11 @@ This setup is crucial for the Lambda function to facilitate secure SFTP file tra
 6. **Performance Issues or Timeouts**
    - **Potential Cause:** Large file sizes or insufficient Lambda function timeout/memory settings.
    - **Solution:** Adjust the timeout and memory settings of the Lambda function as needed.
+
+7. **Encryption Issues**
+   - **Potential Cause:** Missing or incorrect encryption password environment variable.
+   - **Solution:** Verify the `ENCRYPTION_PASSWORD` environment variable is set in Lambda configuration.
+
+8. **Lambda Layer Issues**
+   - **Potential Cause:** Missing or incorrectly attached Lambda layer.
+   - **Solution:** Verify the `lambda_layer.zip` is properly uploaded and attached to the function.

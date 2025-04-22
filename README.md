@@ -7,10 +7,10 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
 
 ## Prerequisites
 - **AWS Account**: An active AWS account with permissions to manage Lambda and S3 services.
-- **Labmda Runtime**: Support Lambda Python runtime version 3.8 up to 3.12.
+- **Lambda Runtime**: Support Lambda Python runtime version 3.8 up to 3.12.
 - **Radware Cloud WAAP**: Configuration in place to send logs to an AWS S3 bucket.
 - **Permissions**: Proper IAM roles and policies that allow the Lambda function to read from S3 buckets and write to the desired destinations.
-- **Lambda Layer**: Required `lambda_layer.zip` containing paramiko and pyAesCrypt libraries for SFTP and encryption support.
+- **Lambda Layer**: Required `lambda_layer.zip` containing paramiko library for SFTP support.
 - **For SFTP Transfers**:
   - SFTP server access with credentials or SSH keys for secure file transfer.
 - **For Azure Blob Storage Transfer**:
@@ -20,13 +20,13 @@ This guide provides detailed instructions on utilizing an AWS Lambda function fo
 Version 2.1.2
 
 ## Features
-- **Multiple Destination Support**: Extend the functionality of log transfers to include SFTP servers alongside existing AWS S3 and Azure Blob Storage options.
-- **Flexible Output Formatting**: Users can now specify `ndjson` as an output format, in addition to the previously supported `json` and `json.gz` formats.
-- **Enhanced Folder Structure Control**: Choose to either maintain the original folder hierarchy or restructure the output to a specified directory path.
-- **Suffix Management**: Customize folder names by appending or removing specified suffixes, providing better organization of processed files.
-- **Security and Compliance**: Ensure that logs are transferred securely, maintaining compliance with organizational security policies.
-- **Automated Post-Processing Cleanup**: Option to delete original files after successful processing to keep your storage organized and cost-efficient.
-- **Optional Encryption**: Enable AES encryption for files before uploading to any destination.
+- **Multiple Destination Support**: Internal S3, External S3, Custom S3 (S3-compatible: Synology, MinIO, Dell ECS, etc.), SFTP, Azure Blob.
+- **Flexible Output Formatting**: `ndjson`, `json`, `json.gz`.
+- **Enhanced Folder Structure Control**: Maintain or flatten folder hierarchy.
+- **Suffix Management**: Add/remove suffixes for folder names.
+- **Security and Compliance**: Secure log transfer.
+- **Automated Post-Processing Cleanup**: Optionally delete original files.
+- **Password-Protected ZIP**: Create password-protected ZIP files before upload (with standard ZIP password protection).
 
 ## Operational Sequence
 The tool operates in the following sequence:
@@ -41,9 +41,9 @@ The tool operates in the following sequence:
 - The Lambda function performs the following actions:
   - Downloads the new file from the S3 bucket.
   - Adjusts the file's format based on predefined settings.
+  - Optionally, creates a password-protected ZIP file.
   - Sends the reformatted file to the chosen destination.
   - Optionally, removes the original file from the S3 bucket.
-
 
 ## Configuration
 
@@ -51,9 +51,9 @@ Set the following in the Lambda function code:
 
 - `DELETE_ORIGINAL` (bool): If `True`, original files are deleted after processing. Default is `True`.
   - Example: `DELETE_ORIGINAL = True`
-- `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Azure"`, `"Dell ECS S3"`, `"SFTP"`,
-  - Example: `DESTINATION = "Azure"`
-- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure, Dell ECS S3 and SFTP only).
+- `DESTINATION` (str): Determines where the file will be uploaded. Options are `"Internal S3"`, `"External S3"`, `"Custom S3"`, `"SFTP"`, `"Azure"`.
+  - Example: `DESTINATION = "Custom S3"`
+- `OUTPUT_FORMAT` (str): Format of the transformed file. Options are `"ndjson"`, `"json"`, `"json.gz"` (json.gz is for Azure, Custom S3 and SFTP only).
   - Example: `OUTPUT_FORMAT = "ndjson"`
 - `KEEP_ORIGINAL_FOLDER_STRUCTURE` (bool): Set to `False` to ignore original folder structure.
   - Example: `KEEP_ORIGINAL_FOLDER_STRUCTURE = False`
@@ -71,37 +71,37 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 - `INTERNAL_DESTINATION_BUCKET` (str or None): The S3 bucket where the transformed file will be uploaded if `DESTINATION` is `"Internal S3"`. If `None`, defaults to the source bucket.
   - Example: `INTERNAL_DESTINATION_BUCKET = "my-internal-bucket"`
 
-### Encryption Options
-- `ENCRYPT_OUTPUT` (bool): Enable encryption for files before uploading to any destination. 
-  - Example: `ENCRYPT_OUTPUT = True`
-- `ENCRYPTION_PASSWORD_ENV_VAR` (str): Name of the Lambda environment variable containing the encryption password.
-  - Example: `ENCRYPTION_PASSWORD_ENV_VAR = "ENCRYPTION_PASSWORD"`
-- `ENCRYPTION_BUFFER_SIZE` (int): Buffer size for encryption operations (in bytes).
-  - Example: `ENCRYPTION_BUFFER_SIZE = 64 * 1024`  # 64KB buffer
-- `ENCRYPTED_FILE_SUFFIX` (str): Suffix added to encrypted files.
-  - Example: `ENCRYPTED_FILE_SUFFIX = ".aes"`
+### Password-Protected ZIP Options
+- `PASSWORD_PROTECT_ZIP` (bool): Enable password protection using ZIP format.
+  - Example: `PASSWORD_PROTECT_ZIP = True`
+- `ZIP_PASSWORD_ENV_VAR` (str): Name of the Lambda environment variable containing the ZIP password.
+  - Example: `ZIP_PASSWORD_ENV_VAR = "ZIP_PASSWORD"`
+- `PROTECTED_ZIP_SUFFIX` (str): Suffix added to password-protected ZIP files.
+  - Example: `PROTECTED_ZIP_SUFFIX = ".zip"`
 
-### External S3 Options
+### External & Custom S3 Options
 
-#### General External S3 Options
-- `EXTERNAL_ACCESS_KEY_ID` (str): Access key for external AWS S3 access.
+#### General Options (Used by both AWS External and Custom S3)
+- `EXTERNAL_ACCESS_KEY_ID` (str): Access key for external AWS S3 or Custom S3 access.
   - Example: `EXTERNAL_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"`
-- `EXTERNAL_SECRET_ACCESS_KEY` (str): Secret access key for external AWS S3 access.
+- `EXTERNAL_SECRET_ACCESS_KEY` (str): Secret access key for external AWS S3 or Custom S3 access.
   - Example: `EXTERNAL_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
-- `EXTERNAL_DESTINATION_BUCKET` (str): The name of the external S3 bucket where logs will be uploaded.
+- `EXTERNAL_DESTINATION_BUCKET` (str): The name of the external bucket where logs will be uploaded.
   - Example: `EXTERNAL_DESTINATION_BUCKET = "my-external-bucket"`
-- `EXTERNAL_PREFIX` (str): Optional prefix for organizing uploaded files within the external S3 bucket. Ensure to end with a "/" if specified.
-  - Example: `EXTERNAL_PREFIX = "logs/"`  # Uploads files to "logs/" directory in the bucket.
+- `EXTERNAL_PREFIX` (str): Optional prefix for organizing uploaded files.
+  - Example: `EXTERNAL_PREFIX = "logs/"`
 
-#### AWS-specific S3 Options
+#### External AWS S3 Specific Options
 - `EXTERNAL_BUCKET_REGION` (str): AWS region where the external S3 bucket is located.
   - Example: `EXTERNAL_BUCKET_REGION = "us-east-1"`
 
-#### Dell ECS-specific S3 Options
-- `EXTERNAL_ENDPOINT_URL` (str): Endpoint URL for accessing Dell ECS S3-compatible storage.
-  - Example: `EXTERNAL_ENDPOINT_URL = "https://ecs.example.com"`
-- `EXTERNAL_ENDPOINT_SSL_VERIFY` (bool): Whether to verify SSL certificates when accessing Dell ECS S3. Recommended to set to `True` for production environments.
-  - Example: `EXTERNAL_ENDPOINT_SSL_VERIFY = False`
+#### Custom S3 Specific Options (e.g., Synology, MinIO, Dell ECS)
+- `EXTERNAL_ENDPOINT_URL` (str): Endpoint URL for S3-compatible storage.
+  - Example: `EXTERNAL_ENDPOINT_URL = "https://storage.example.com"`
+- `EXTERNAL_ENDPOINT_SSL_VERIFY` (bool): Whether to verify SSL certificates.
+  - Example: `EXTERNAL_ENDPOINT_SSL_VERIFY = True`
+- `EXTERNAL_ENDPOINT_SIGNATURE_VERSION` (str): S3 signature version.
+  - Example: `EXTERNAL_ENDPOINT_SIGNATURE_VERSION = "s3v4"`
 
 ### Azure Destination Options
 - `ACCOUNT_NAME` (str): Name of the Azure storage account.
@@ -130,8 +130,6 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 
 **Note**: When using key-based authentication (`SFTP_USE_KEY_AUTH = True`), the private key must be stored in the Lambda environment variable specified by `SFTP_PRIVATE_KEY_ENV_VAR`.
 
-
-
 ## Deployment & Setup
 
 1. Download the script and Lambda layer from GitHub.
@@ -147,27 +145,28 @@ Note: `SUFFIX_MODE`, `ORIGINAL_SUFFIX`, and `NEW_SUFFIX` are only relevant if `K
 7. Increase the Lambda function timeout to 5 minutes.
 8. Set the Lambda function memory to at least 256 MB.
 9. Set up an S3 event trigger for new `.json.gz` file uploads.
-10. If using encryption, set the `ENCRYPTION_PASSWORD` environment variable.
+10. If using ZIP protection, set the `ZIP_PASSWORD` environment variable.
 
 ## Usage
 
 When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will process it according to the configurations set, transforming and transferring the file to the specified destination.
 
-
 ## Changelog
 
 ### Version 2.1.2 - 15/11/2024
-- Added optional encryption feature with AES encryption support for all destinations.
-- Updated Lambda layer to include pyAesCrypt library alongside paramiko.
-- Unified the Lambda layer requirement into a single `lambda_layer.zip`.
+- Added password-protected ZIP functionality for secure file transfers
+- Renamed "Dell ECS S3" destination to "Custom S3" for broader S3-compatible storage support
+- Enhanced error handling and retry mechanisms with proper DLQ support
+- Added support for Synology, MinIO, and other S3-compatible storage systems
+- Updated configuration structure for better clarity and flexibility
 ### Version 2.1.1 - 10/11/2024
 - Added support for SFTP authentication using SSH private keys, enabling secure file transfers without needing a password.
 - Updated `upload_to_sftp` function to conditionally use either password or key-based authentication based on configuration.
 ### Version 2.1.0 - 11/04/2024
-- **Support for json.gz for Dell ECS and SFTP**: Added support to send logs in json.gz format with destination Dell ECS and SFTP.
+- **Support for json.gz for Custom S3 and SFTP**: Added support to send logs in json.gz format with destination Custom S3 and SFTP.
 - **Added support for test txt file**: Added support to send the test txt file using the lambda to help with initial configuration and deployment testing.
 ### Version 2.0.0 - 10/04/2024
-- **Added Support for Dell ECS and SFTP**: Expanded the destination options to include Dell ECS S3-compatible storage and SFTP servers, allowing for a wider range of log transfer destinations.
+- **Added Support for Custom S3 and SFTP**: Expanded the destination options to include Custom S3 S3-compatible storage and SFTP servers, allowing for a wider range of log transfer destinations.
 - **Log Enrichment Features**: Introduced log enrichment capabilities to ensure each log contains an `applicationName` and to add a `logType` to every log. This enhancement improves the quality and usability of the log data for analysis and integration with various services and SIEMs.
 - **Paramiko Layer for SFTP Transfers**: Implemented the use of a `paramiko-layer.zip` Lambda layer to facilitate secure SFTP file transfers. This layer is necessary for the function's operation with SFTP destinations and is compatible with Python runtimes 3.8 to 3.12.
 ### Version 1.3.0 - 01/02/2024
@@ -186,12 +185,10 @@ When a `.json.gz` file is uploaded to the S3 bucket, the Lambda function will pr
 - Permissions for logging to Amazon CloudWatch Logs.
 - Additional permissions for external S3 bucket interactions, if applicable.
 
-
 ## Additional Notes for SFTP Transfers
 
-The Lambda layer (`lambda_layer.zip`) now includes both paramiko for SFTP transfers and pyAesCrypt for encryption support. This layer is required for:
+The Lambda layer (`lambda_layer.zip`) now includes paramiko for SFTP transfers. This layer is required for:
 - SFTP file transfers using paramiko
-- File encryption using pyAesCrypt (when `ENCRYPT_OUTPUT = True`)
 
 ### Adding the Lambda Layer
 
@@ -237,10 +234,10 @@ The Lambda layer (`lambda_layer.zip`) now includes both paramiko for SFTP transf
    - **Potential Cause:** Large file sizes or insufficient Lambda function timeout/memory settings.
    - **Solution:** Adjust the timeout and memory settings of the Lambda function as needed.
 
-7. **Encryption Issues**
-   - **Potential Cause:** Missing or incorrect encryption password environment variable.
-   - **Solution:** Verify the `ENCRYPTION_PASSWORD` environment variable is set in Lambda configuration.
+7. **ZIP Password Protection Issues**
+   - **Potential Cause:** Missing ZIP password environment variable or incorrect configuration
+   - **Solution:** Verify the `ZIP_PASSWORD` environment variable is set in Lambda configuration and `PASSWORD_PROTECT_ZIP` is enabled
 
-8. **Lambda Layer Issues**
-   - **Potential Cause:** Missing or incorrectly attached Lambda layer.
-   - **Solution:** Verify the `lambda_layer.zip` is properly uploaded and attached to the function.
+8. **Custom S3 Connection Issues**
+    - **Potential Cause:** Incorrect endpoint URL or authentication details
+    - **Solution:** Verify `EXTERNAL_ENDPOINT_URL` and credentials for your S3-compatible storage system

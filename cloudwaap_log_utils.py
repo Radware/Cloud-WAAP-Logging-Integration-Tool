@@ -5,21 +5,20 @@ from datetime import datetime
 
 class CloudWAAPProcessor:
     """
-    CloudWAAPProcessor provides a collection of static methods designed to process
-    and analyze Cloud WAAP logs. It includes functionalities for identifying log types,
-    parsing various components of the logs, and extracting detailed information from log entries.
+    Utility class for processing Cloud WAAP logs and extracting metadata.
+    Handles log type identification, tenant parsing, and application details extraction.
     """
 
     @staticmethod
     def identify_log_type(key):
         """
-        Identify the type of Cloud WAAP log based on the key or file name.
+        Extract the log type from a Cloud WAAP log file key.
 
         Args:
-            key (str): The S3 key or file name of the log.
+            key (str): S3 object key or file path
 
         Returns:
-            str: The identified type of log ('Access', a specific log type, or 'Unknown').
+            str: Log type ('Access', specific event type, or 'Unknown')
         """
         try:
             log_type = "Unknown"
@@ -34,71 +33,63 @@ class CloudWAAPProcessor:
 
             return log_type
         except Exception as e:
-            print(f"Error identifying log type for key '{key}': {e}")
+            print(f"ERROR: Log type identification failed for '{key}': {e}")
             return "Unknown"
 
     @staticmethod
     def identify_application_id(key, log_type):
         """
-        Identify and return specific parts of a Cloud WAAP log key based on the log type.
+        Extract application ID from log key based on log type.
 
         Args:
-            key (str): The S3 key or file name of the log.
-            log_type (str): The type of log, e.g., "Bot" or other specified types.
+            key (str): S3 object key or file path
+            log_type (str): Type of log being processed
 
         Returns:
-            str: The identified part of the log key (e.g., application ID if log_type is "Bot", or 'Unknown').
+            str: Application ID or 'Unknown'
         """
         try:
-            # Default value in case of failure to identify
             result = "Unknown"
-
-            # Split the key into parts
             parts = key.split("/")
 
             if parts and log_type == "Bot":
                 result = parts[-3]
-            else:
-                # For other types of logs, implement the logic as needed
-                pass
 
             return result
         except Exception as e:
-            print(f"Error processing key '{key}' with log_type '{log_type}': {e}")
+            print(f"ERROR: Application ID extraction failed for '{key}': {e}")
             return "Unknown"
 
     @staticmethod
     def parse_tenant_name(key):
         """
-        Extract the tenant name from the S3 key.
+        Extract tenant name from log file key.
 
         Args:
-            key (str): The S3 key of the log file.
+            key (str): S3 object key or file path
 
         Returns:
-            str: The extracted tenant name.
+            str: Tenant name or empty string if not found
         """
         try:
             parts = key.split("/")
             if len(parts) >= 4:
-                tenant_name = parts[-4]
-                return tenant_name
-            print(f"Unable to extract tenant name from key: {key}")
+                return parts[-4]
             return ""
         except Exception as e:
-            print(f"Error extracting tenant name from key '{key}': {e}")
+            print(f"ERROR: Tenant name extraction failed for '{key}': {e}")
             return ""
 
     @staticmethod
     def parse_application_name(key):
         """
-        Extract the application name from the S3 key based on a regular expression pattern.
+        Extract application name from log file key using regex pattern.
 
         Args:
-            key (str): The S3 key of the log file.
+            key (str): S3 object key or file path
 
         Returns:
-            str or None: The extracted application name, or None if not found.
+            str or None: Application name or None if not found
         """
         try:
             tenant_name = CloudWAAPProcessor.parse_tenant_name(key)
@@ -106,11 +97,8 @@ class CloudWAAPProcessor:
             match = re.search(pattern, key)
 
             if match:
-                application_name = match.group(1)
-                return application_name
-            else:
-                print(f"No application name found in key: {key}")
-                return None
+                return match.group(1)
+            return None
         except Exception as e:
-            print(f"Error parsing application name from key '{key}': {e}")
+            print(f"ERROR: Application name extraction failed for '{key}': {e}")
             return None
